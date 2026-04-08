@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Rounded square background -->
+  <rect x="0" y="0" width="1024" height="1024" rx="220" ry="220" fill="#6366f1"/>
+
+  <g transform="translate(0, 80)">
+    <!-- Person 1 (front, larger) -->
+    <circle cx="400" cy="340" r="85" fill="white"/>
+    <path d="M400 445 C315 445 250 510 250 590 L250 610 C250 632 268 650 290 650 L510 650 C532 650 550 632 550 610 L550 590 C550 510 485 445 400 445Z" fill="white"/>
+
+    <!-- Person 2 (behind, offset right) -->
+    <circle cx="545" cy="308" r="68" fill="white" opacity="0.5"/>
+    <path d="M545 392 C478 392 425 440 425 505 L425 520 C425 537 439 550 456 550 L634 550 C651 550 665 537 665 520 L665 505 C665 440 612 392 545 392Z" fill="white" opacity="0.5"/>
+
+    <!-- Plus sign (add/invite) -->
+    <g transform="translate(700, 310)">
+      <rect x="24" y="0" width="32" height="80" rx="16" fill="white"/>
+      <rect x="0" y="24" width="80" height="32" rx="16" fill="white"/>
+    </g>
+
+    <!-- Arrow pointing right (invite/send action) -->
+    <g transform="translate(610, 570)">
+      <rect x="0" y="28" width="120" height="40" rx="20" fill="white"/>
+      <polygon points="110,12 185,48 110,84" fill="white"/>
+    </g>
+  </g>
+</svg>

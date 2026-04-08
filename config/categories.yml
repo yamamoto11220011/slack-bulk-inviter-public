@@ -1,0 +1,44 @@
+# ユーザー分類パターン定義
+# Slack の name フィールド (real_name) に対する前方一致でマッチ
+# patterns: 学籍番号の先頭文字列（小文字に正規化してマッチ）
+
+categories:
+  - id: "2025-spring"
+    label: "2025 Spring Intake"
+    type: "cohort"
+    patterns:
+      - "25sp"
+      - "25su"
+
+  - id: "2025-autumn"
+    label: "2025 Autumn Intake"
+    type: "cohort"
+    patterns:
+      - "25au"
+
+  - id: "2026-spring"
+    label: "2026 Spring Intake"
+    type: "cohort"
+    patterns:
+      - "26sp"
+
+  - id: "school-a"
+    label: "School A"
+    type: "school"
+    patterns:
+      - "24a"
+      - "25a"
+
+  - id: "school-b"
+    label: "School B"
+    type: "school"
+    patterns:
+      - "24b"
+      - "25b"
+
+  - id: "school-c"
+    label: "School C"
+    type: "school"
+    patterns:
+      - "24c"
+      - "25c"

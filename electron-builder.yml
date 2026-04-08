@@ -1,0 +1,36 @@
+appId: com.slack-bulk-inviter.app
+productName: Slack Bulk Inviter
+directories:
+  buildResources: resources
+  output: dist
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+extraResources:
+  - from: config/
+    to: config/
+    filter:
+      - '**/*'
+mac:
+  target:
+    - dmg
+    - zip
+  artifactName: ${name}-${version}-${os}.${ext}
+  icon: resources/icon.icns
+  category: public.app-category.utilities
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - arm64
+  artifactName: ${name}-${version}-${os}-${arch}.${ext}
+  icon: resources/icon.png
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: Slack Bulk Inviter
