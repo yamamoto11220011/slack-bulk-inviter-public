@@ -11,6 +11,15 @@ import type {
   AuditTimelinePoint,
   ClassifiedUser,
   InviteRunRecord,
+  OperationJobInput,
+  OperationJobItemInput,
+  OperationJobItemRecord,
+  OperationJobRecord,
+  OperationStatus,
+  OperationSummary,
+  OperationTaskDetail,
+  OperationTaskInput,
+  OperationTaskRecord,
   SlackChannel,
   SlackMessageActivity,
   SyncMeta,
@@ -53,6 +62,29 @@ function isoNow(): string {
   return new Date().toISOString()
 }
 
+function emptyOperationSummary(totalItems = 0): OperationSummary {
+  return {
+    totalItems,
+    pendingCount: totalItems,
+    processingCount: 0,
+    successCount: 0,
+    failedCount: 0,
+    skippedCount: 0,
+    canceledCount: 0
+  }
+}
+
+function deriveOperationStatus(summary: OperationSummary): OperationStatus {
+  if (summary.totalItems === 0) return 'skipped'
+  if (summary.processingCount > 0) return 'processing'
+  if (summary.pendingCount === summary.totalItems) return 'pending'
+  if (summary.pendingCount > 0) return 'pending'
+  if (summary.failedCount > 0) return 'failed'
+  if (summary.canceledCount > 0) return 'canceled'
+  if (summary.successCount > 0) return 'success'
+  return 'skipped'
+}
+
 export class AppDatabase {
   private db: Database
 
@@ -72,6 +104,7 @@ export class AppDatabase {
     this.db.pragma('foreign_keys = ON')
 
     this.initSchema()
+    this.resetProcessingOperationsToPending()
 
     if (isNewDatabase && options?.legacyPath && existsSync(options.legacyPath)) {
       this.migrateLegacyData(options.legacyPath, password)
@@ -165,6 +198,77 @@ export class AppDatabase {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS operation_tasks (
+        id TEXT PRIMARY KEY,
+        operation_type TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        metadata_json TEXT,
+        total_jobs INTEGER NOT NULL,
+        total_items INTEGER NOT NULL,
+        pending_count INTEGER NOT NULL,
+        processing_count INTEGER NOT NULL,
+        success_count INTEGER NOT NULL,
+        failed_count INTEGER NOT NULL,
+        skipped_count INTEGER NOT NULL,
+        canceled_count INTEGER NOT NULL,
+        started_at TEXT,
+        completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS operation_jobs (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        operation_type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL,
+        target_type TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        target_label TEXT,
+        idempotency_key TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        metadata_json TEXT,
+        total_items INTEGER NOT NULL,
+        pending_count INTEGER NOT NULL,
+        processing_count INTEGER NOT NULL,
+        success_count INTEGER NOT NULL,
+        failed_count INTEGER NOT NULL,
+        skipped_count INTEGER NOT NULL,
+        canceled_count INTEGER NOT NULL,
+        started_at TEXT,
+        completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (task_id) REFERENCES operation_tasks(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS operation_job_items (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        job_id TEXT NOT NULL,
+        operation_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        target_label TEXT,
+        idempotency_key TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        result_json TEXT,
+        error TEXT,
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        started_at TEXT,
+        completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (task_id) REFERENCES operation_tasks(id) ON DELETE CASCADE,
+        FOREIGN KEY (job_id) REFERENCES operation_jobs(id) ON DELETE CASCADE
+      );
       
       `);
 
@@ -204,6 +308,14 @@ export class AppDatabase {
       CREATE INDEX IF NOT EXISTS idx_messages_thread_ts ON messages(thread_ts);
       CREATE INDEX IF NOT EXISTS idx_membership_changes_date ON membership_changes(synced_at);
       CREATE INDEX IF NOT EXISTS idx_invite_runs_created_at ON invite_runs(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_operation_tasks_created_at ON operation_tasks(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_operation_tasks_type ON operation_tasks(operation_type, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_operation_tasks_idempotency ON operation_tasks(idempotency_key, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_operation_jobs_task_id ON operation_jobs(task_id, created_at ASC);
+      CREATE INDEX IF NOT EXISTS idx_operation_job_items_task_id ON operation_job_items(task_id, created_at ASC);
+      CREATE INDEX IF NOT EXISTS idx_operation_job_items_job_id ON operation_job_items(job_id, created_at ASC);
+      CREATE INDEX IF NOT EXISTS idx_operation_job_items_status ON operation_job_items(status, updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_operation_job_items_idempotency ON operation_job_items(idempotency_key, status);
     `)
   }
 
@@ -703,6 +815,505 @@ export class AppDatabase {
           updated_at = excluded.updated_at
       `)
       .run(type, value, isoNow())
+  }
+
+  private parseJsonRecord(value: unknown): Record<string, unknown> | null {
+    if (!value) return null
+    try {
+      return JSON.parse(String(value)) as Record<string, unknown>
+    } catch {
+      return null
+    }
+  }
+
+  private mapOperationSummary(row: Record<string, unknown>): OperationSummary {
+    return {
+      totalItems: Number(row.total_items ?? 0),
+      pendingCount: Number(row.pending_count ?? 0),
+      processingCount: Number(row.processing_count ?? 0),
+      successCount: Number(row.success_count ?? 0),
+      failedCount: Number(row.failed_count ?? 0),
+      skippedCount: Number(row.skipped_count ?? 0),
+      canceledCount: Number(row.canceled_count ?? 0)
+    }
+  }
+
+  private mapOperationTask(row: Record<string, unknown>): OperationTaskRecord {
+    return {
+      id: String(row.id),
+      operationType: String(row.operation_type) as OperationTaskRecord['operationType'],
+      mode: String(row.mode) as OperationTaskRecord['mode'],
+      title: String(row.title),
+      status: String(row.status) as OperationTaskRecord['status'],
+      idempotencyKey: String(row.idempotency_key),
+      payloadHash: String(row.payload_hash),
+      metadata: this.parseJsonRecord(row.metadata_json),
+      totalJobs: Number(row.total_jobs ?? 0),
+      summary: this.mapOperationSummary(row),
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+      startedAt: (row.started_at as string | null) ?? null,
+      completedAt: (row.completed_at as string | null) ?? null
+    }
+  }
+
+  private mapOperationJob(row: Record<string, unknown>): OperationJobRecord {
+    return {
+      id: String(row.id),
+      taskId: String(row.task_id),
+      operationType: String(row.operation_type) as OperationJobRecord['operationType'],
+      title: String(row.title),
+      status: String(row.status) as OperationJobRecord['status'],
+      targetType: String(row.target_type) as OperationJobRecord['targetType'],
+      targetId: String(row.target_id),
+      targetLabel: (row.target_label as string | null) ?? null,
+      idempotencyKey: String(row.idempotency_key),
+      payloadHash: String(row.payload_hash),
+      metadata: this.parseJsonRecord(row.metadata_json),
+      summary: this.mapOperationSummary(row),
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+      startedAt: (row.started_at as string | null) ?? null,
+      completedAt: (row.completed_at as string | null) ?? null
+    }
+  }
+
+  private mapOperationItem(row: Record<string, unknown>): OperationJobItemRecord {
+    return {
+      id: String(row.id),
+      taskId: String(row.task_id),
+      jobId: String(row.job_id),
+      operationType: String(row.operation_type) as OperationJobItemRecord['operationType'],
+      status: String(row.status) as OperationJobItemRecord['status'],
+      targetId: String(row.target_id),
+      targetLabel: (row.target_label as string | null) ?? null,
+      idempotencyKey: String(row.idempotency_key),
+      payloadHash: String(row.payload_hash),
+      payload: this.parseJsonRecord(row.payload_json) ?? {},
+      result: this.parseJsonRecord(row.result_json),
+      error: (row.error as string | null) ?? null,
+      attemptCount: Number(row.attempt_count ?? 0),
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+      startedAt: (row.started_at as string | null) ?? null,
+      completedAt: (row.completed_at as string | null) ?? null
+    }
+  }
+
+  createOperationTaskGraph(
+    task: OperationTaskInput,
+    jobs: OperationJobInput[],
+    items: OperationJobItemInput[]
+  ): void {
+    const insertTask = this.db.prepare(`
+      INSERT INTO operation_tasks (
+        id, operation_type, mode, title, status, idempotency_key, payload_hash, metadata_json,
+        total_jobs, total_items, pending_count, processing_count, success_count, failed_count,
+        skipped_count, canceled_count, started_at, completed_at, created_at, updated_at
+      ) VALUES (
+        @id, @operation_type, @mode, @title, @status, @idempotency_key, @payload_hash, @metadata_json,
+        @total_jobs, @total_items, @pending_count, @processing_count, @success_count, @failed_count,
+        @skipped_count, @canceled_count, @started_at, @completed_at, @created_at, @updated_at
+      )
+    `)
+    const insertJob = this.db.prepare(`
+      INSERT INTO operation_jobs (
+        id, task_id, operation_type, title, status, target_type, target_id, target_label,
+        idempotency_key, payload_hash, metadata_json, total_items, pending_count, processing_count,
+        success_count, failed_count, skipped_count, canceled_count, started_at, completed_at,
+        created_at, updated_at
+      ) VALUES (
+        @id, @task_id, @operation_type, @title, @status, @target_type, @target_id, @target_label,
+        @idempotency_key, @payload_hash, @metadata_json, @total_items, @pending_count, @processing_count,
+        @success_count, @failed_count, @skipped_count, @canceled_count, @started_at, @completed_at,
+        @created_at, @updated_at
+      )
+    `)
+    const insertItem = this.db.prepare(`
+      INSERT INTO operation_job_items (
+        id, task_id, job_id, operation_type, status, target_id, target_label, idempotency_key,
+        payload_hash, payload_json, result_json, error, attempt_count, started_at, completed_at,
+        created_at, updated_at
+      ) VALUES (
+        @id, @task_id, @job_id, @operation_type, @status, @target_id, @target_label, @idempotency_key,
+        @payload_hash, @payload_json, @result_json, @error, @attempt_count, @started_at, @completed_at,
+        @created_at, @updated_at
+      )
+    `)
+
+    const transaction = this.db.transaction(() => {
+      insertTask.run({
+        id: task.id,
+        operation_type: task.operationType,
+        mode: task.mode,
+        title: task.title,
+        status: task.status,
+        idempotency_key: task.idempotencyKey,
+        payload_hash: task.payloadHash,
+        metadata_json: task.metadata ? JSON.stringify(task.metadata) : null,
+        total_jobs: task.totalJobs,
+        total_items: task.summary.totalItems,
+        pending_count: task.summary.pendingCount,
+        processing_count: task.summary.processingCount,
+        success_count: task.summary.successCount,
+        failed_count: task.summary.failedCount,
+        skipped_count: task.summary.skippedCount,
+        canceled_count: task.summary.canceledCount,
+        started_at: task.startedAt ?? null,
+        completed_at: task.completedAt ?? null,
+        created_at: task.createdAt,
+        updated_at: task.updatedAt
+      })
+
+      for (const job of jobs) {
+        insertJob.run({
+          id: job.id,
+          task_id: job.taskId,
+          operation_type: job.operationType,
+          title: job.title,
+          status: job.status,
+          target_type: job.targetType,
+          target_id: job.targetId,
+          target_label: job.targetLabel ?? null,
+          idempotency_key: job.idempotencyKey,
+          payload_hash: job.payloadHash,
+          metadata_json: job.metadata ? JSON.stringify(job.metadata) : null,
+          total_items: job.summary.totalItems,
+          pending_count: job.summary.pendingCount,
+          processing_count: job.summary.processingCount,
+          success_count: job.summary.successCount,
+          failed_count: job.summary.failedCount,
+          skipped_count: job.summary.skippedCount,
+          canceled_count: job.summary.canceledCount,
+          started_at: job.startedAt ?? null,
+          completed_at: job.completedAt ?? null,
+          created_at: job.createdAt,
+          updated_at: job.updatedAt
+        })
+      }
+
+      for (const item of items) {
+        insertItem.run({
+          id: item.id,
+          task_id: item.taskId,
+          job_id: item.jobId,
+          operation_type: item.operationType,
+          status: item.status,
+          target_id: item.targetId,
+          target_label: item.targetLabel ?? null,
+          idempotency_key: item.idempotencyKey,
+          payload_hash: item.payloadHash,
+          payload_json: JSON.stringify(item.payload),
+          result_json: item.result ? JSON.stringify(item.result) : null,
+          error: item.error ?? null,
+          attempt_count: item.attemptCount ?? 0,
+          started_at: item.startedAt ?? null,
+          completed_at: item.completedAt ?? null,
+          created_at: item.createdAt,
+          updated_at: item.updatedAt
+        })
+      }
+    })
+
+    transaction()
+  }
+
+  listOperationTasks(
+    limit = 30,
+    operationType?: OperationTaskRecord['operationType']
+  ): OperationTaskRecord[] {
+    const rows = operationType
+      ? (this.db
+          .prepare(
+            'SELECT * FROM operation_tasks WHERE operation_type = ? ORDER BY created_at DESC LIMIT ?'
+          )
+          .all(operationType, limit) as Array<Record<string, unknown>>)
+      : (this.db
+          .prepare('SELECT * FROM operation_tasks ORDER BY created_at DESC LIMIT ?')
+          .all(limit) as Array<Record<string, unknown>>)
+
+    return rows.map((row) => this.mapOperationTask(row))
+  }
+
+  findLatestOperationTaskByIdempotencyKey(idempotencyKey: string): OperationTaskRecord | null {
+    const row = this.db
+      .prepare('SELECT * FROM operation_tasks WHERE idempotency_key = ? ORDER BY created_at DESC LIMIT 1')
+      .get(idempotencyKey) as Record<string, unknown> | undefined
+    return row ? this.mapOperationTask(row) : null
+  }
+
+  getOperationTask(taskId: string): OperationTaskDetail | null {
+    const taskRow = this.db
+      .prepare('SELECT * FROM operation_tasks WHERE id = ?')
+      .get(taskId) as Record<string, unknown> | undefined
+    if (!taskRow) return null
+
+    const jobs = this.db
+      .prepare('SELECT * FROM operation_jobs WHERE task_id = ? ORDER BY created_at ASC')
+      .all(taskId) as Array<Record<string, unknown>>
+    const items = this.db
+      .prepare('SELECT * FROM operation_job_items WHERE task_id = ? ORDER BY created_at ASC')
+      .all(taskId) as Array<Record<string, unknown>>
+
+    return {
+      ...this.mapOperationTask(taskRow),
+      jobs: jobs.map((row) => this.mapOperationJob(row)),
+      items: items.map((row) => this.mapOperationItem(row))
+    }
+  }
+
+  getOperationJobItems(jobId: string, statuses?: OperationStatus[]): OperationJobItemRecord[] {
+    const query =
+      statuses && statuses.length > 0
+        ? `SELECT * FROM operation_job_items WHERE job_id = ? AND status IN (${statuses.map(() => '?').join(', ')}) ORDER BY created_at ASC`
+        : 'SELECT * FROM operation_job_items WHERE job_id = ? ORDER BY created_at ASC'
+    const stmt = this.db.prepare(query)
+    const rows = (statuses && statuses.length > 0
+      ? stmt.all(jobId, ...statuses)
+      : stmt.all(jobId)) as Array<Record<string, unknown>>
+    return rows.map((row) => this.mapOperationItem(row))
+  }
+
+  getOperationTaskItems(taskId: string, statuses?: OperationStatus[]): OperationJobItemRecord[] {
+    const query =
+      statuses && statuses.length > 0
+        ? `SELECT * FROM operation_job_items WHERE task_id = ? AND status IN (${statuses.map(() => '?').join(', ')}) ORDER BY created_at ASC`
+        : 'SELECT * FROM operation_job_items WHERE task_id = ? ORDER BY created_at ASC'
+    const stmt = this.db.prepare(query)
+    const rows = (statuses && statuses.length > 0
+      ? stmt.all(taskId, ...statuses)
+      : stmt.all(taskId)) as Array<Record<string, unknown>>
+    return rows.map((row) => this.mapOperationItem(row))
+  }
+
+  markOperationTaskProcessing(taskId: string): void {
+    const now = isoNow()
+    this.db
+      .prepare(
+        'UPDATE operation_tasks SET status = ?, started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ? WHERE id = ?'
+      )
+      .run('processing', now, now, taskId)
+  }
+
+  markOperationJobProcessing(jobId: string): void {
+    const now = isoNow()
+    this.db
+      .prepare(
+        'UPDATE operation_jobs SET status = ?, started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ? WHERE id = ?'
+      )
+      .run('processing', now, now, jobId)
+  }
+
+  markOperationJobItemProcessing(itemId: string): void {
+    const itemRow = this.db
+      .prepare('SELECT task_id, job_id FROM operation_job_items WHERE id = ?')
+      .get(itemId) as { task_id: string; job_id: string } | undefined
+    if (!itemRow) return
+
+    const now = isoNow()
+    this.db
+      .prepare(
+        `UPDATE operation_job_items
+         SET status = ?, attempt_count = attempt_count + 1, started_at = COALESCE(started_at, ?), updated_at = ?
+         WHERE id = ?`
+      )
+      .run('processing', now, now, itemId)
+
+    this.refreshOperationJob(itemRow.job_id)
+    this.refreshOperationTask(itemRow.task_id)
+  }
+
+  completeOperationJobItem(
+    itemId: string,
+    status: OperationStatus,
+    result?: Record<string, unknown> | null,
+    error?: string | null
+  ): void {
+    const itemRow = this.db
+      .prepare('SELECT task_id, job_id FROM operation_job_items WHERE id = ?')
+      .get(itemId) as { task_id: string; job_id: string } | undefined
+    if (!itemRow) return
+
+    const now = isoNow()
+    this.db
+      .prepare(
+        `UPDATE operation_job_items
+         SET status = ?, result_json = ?, error = ?, completed_at = ?, updated_at = ?
+         WHERE id = ?`
+      )
+      .run(status, result ? JSON.stringify(result) : null, error ?? null, now, now, itemId)
+
+    this.refreshOperationJob(itemRow.job_id)
+    this.refreshOperationTask(itemRow.task_id)
+  }
+
+  markPendingOperationItemsAsCanceled(taskId: string): void {
+    const rows = this.db
+      .prepare('SELECT DISTINCT job_id FROM operation_job_items WHERE task_id = ? AND status IN (?, ?)')
+      .all(taskId, 'pending', 'processing') as Array<{ job_id: string }>
+    const now = isoNow()
+
+    this.db
+      .prepare(
+        `UPDATE operation_job_items
+         SET status = ?, completed_at = ?, updated_at = ?
+         WHERE task_id = ? AND status IN (?, ?)`
+      )
+      .run('canceled', now, now, taskId, 'pending', 'processing')
+
+    for (const row of rows) {
+      this.refreshOperationJob(row.job_id)
+    }
+    this.refreshOperationTask(taskId)
+  }
+
+  private refreshOperationCountsForJob(jobId: string): OperationSummary {
+    const row = this.db
+      .prepare(
+        `SELECT
+           COUNT(*) AS total_items,
+           SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+           SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS processing_count,
+           SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success_count,
+           SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_count,
+           SUM(CASE WHEN status = 'skipped' THEN 1 ELSE 0 END) AS skipped_count,
+           SUM(CASE WHEN status = 'canceled' THEN 1 ELSE 0 END) AS canceled_count
+         FROM operation_job_items
+         WHERE job_id = ?`
+      )
+      .get(jobId) as Record<string, unknown>
+
+    return this.mapOperationSummary(row)
+  }
+
+  refreshOperationJob(jobId: string): OperationJobRecord | null {
+    const summary = this.refreshOperationCountsForJob(jobId)
+    const status = deriveOperationStatus(summary)
+    const now = isoNow()
+    const row = this.db
+      .prepare('SELECT started_at, completed_at FROM operation_jobs WHERE id = ?')
+      .get(jobId) as { started_at: string | null; completed_at: string | null } | undefined
+    if (!row) return null
+
+    const completedAt =
+      status === 'pending' || status === 'processing'
+        ? null
+        : row.completed_at ?? now
+
+    this.db
+      .prepare(
+        `UPDATE operation_jobs
+         SET status = ?, total_items = ?, pending_count = ?, processing_count = ?, success_count = ?,
+             failed_count = ?, skipped_count = ?, canceled_count = ?, completed_at = ?, updated_at = ?
+         WHERE id = ?`
+      )
+      .run(
+        status,
+        summary.totalItems,
+        summary.pendingCount,
+        summary.processingCount,
+        summary.successCount,
+        summary.failedCount,
+        summary.skippedCount,
+        summary.canceledCount,
+        completedAt,
+        now,
+        jobId
+      )
+
+    const updatedRow = this.db
+      .prepare('SELECT * FROM operation_jobs WHERE id = ?')
+      .get(jobId) as Record<string, unknown> | undefined
+    return updatedRow ? this.mapOperationJob(updatedRow) : null
+  }
+
+  private refreshOperationCountsForTask(taskId: string): OperationSummary {
+    const row = this.db
+      .prepare(
+        `SELECT
+           COUNT(*) AS total_items,
+           SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+           SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS processing_count,
+           SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success_count,
+           SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_count,
+           SUM(CASE WHEN status = 'skipped' THEN 1 ELSE 0 END) AS skipped_count,
+           SUM(CASE WHEN status = 'canceled' THEN 1 ELSE 0 END) AS canceled_count
+         FROM operation_job_items
+         WHERE task_id = ?`
+      )
+      .get(taskId) as Record<string, unknown>
+
+    return this.mapOperationSummary(row)
+  }
+
+  refreshOperationTask(taskId: string): OperationTaskRecord | null {
+    const summary = this.refreshOperationCountsForTask(taskId)
+    const status = deriveOperationStatus(summary)
+    const now = isoNow()
+    const row = this.db
+      .prepare('SELECT total_jobs, completed_at FROM operation_tasks WHERE id = ?')
+      .get(taskId) as { total_jobs: number; completed_at: string | null } | undefined
+    if (!row) return null
+
+    const completedAt =
+      status === 'pending' || status === 'processing'
+        ? null
+        : row.completed_at ?? now
+
+    this.db
+      .prepare(
+        `UPDATE operation_tasks
+         SET status = ?, total_jobs = ?, total_items = ?, pending_count = ?, processing_count = ?,
+             success_count = ?, failed_count = ?, skipped_count = ?, canceled_count = ?,
+             completed_at = ?, updated_at = ?
+         WHERE id = ?`
+      )
+      .run(
+        status,
+        row.total_jobs,
+        summary.totalItems,
+        summary.pendingCount,
+        summary.processingCount,
+        summary.successCount,
+        summary.failedCount,
+        summary.skippedCount,
+        summary.canceledCount,
+        completedAt,
+        now,
+        taskId
+      )
+
+    const updatedRow = this.db
+      .prepare('SELECT * FROM operation_tasks WHERE id = ?')
+      .get(taskId) as Record<string, unknown> | undefined
+    return updatedRow ? this.mapOperationTask(updatedRow) : null
+  }
+
+  resetProcessingOperationsToPending(): void {
+    const now = isoNow()
+    this.db
+      .prepare(
+        `UPDATE operation_job_items
+         SET status = ?, updated_at = ?
+         WHERE status = ?`
+      )
+      .run('pending', now, 'processing')
+
+    this.db
+      .prepare(
+        `UPDATE operation_jobs
+         SET status = ?, updated_at = ?, completed_at = NULL
+         WHERE status = ?`
+      )
+      .run('pending', now, 'processing')
+
+    this.db
+      .prepare(
+        `UPDATE operation_tasks
+         SET status = ?, updated_at = ?, completed_at = NULL
+         WHERE status = ?`
+      )
+      .run('pending', now, 'processing')
   }
 
   getBroadcastTasks(): BroadcastTask[] {

@@ -1,3 +1,4 @@
+import { Check } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import type { UserFilter } from '../stores/app-store'
 import { DirectMessageConfirm } from './DirectMessageConfirm'
@@ -211,7 +212,7 @@ export function DirectMessagePanel({
   }
 
   return (
-    <div className="flex flex-col rounded-3xl border border-border/70 bg-card shadow-sm">
+    <div className="flex flex-col rounded-3xl border border-border/70 bg-card shadow-[0_24px_70px_-46px_rgba(0,0,0,0.82)]">
       <div className="p-6 space-y-6">
         <header className="text-center space-y-2">
           <h2 className="text-sm font-black uppercase tracking-widest text-muted-foreground/60">
@@ -223,7 +224,7 @@ export function DirectMessagePanel({
           </p>
         </header>
 
-        <section className="space-y-4 rounded-2xl border border-border/60 bg-background p-5">
+        <section className="space-y-4 rounded-[1.8rem] border border-border/70 bg-[#0e0e0e] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
           <div className="space-y-1">
             <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
               1. カテゴリで一括選択
@@ -233,7 +234,7 @@ export function DirectMessagePanel({
             </p>
           </div>
 
-          <div className="grid gap-2 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2">
             {categories.map((category) => {
               const userIds = userStats.categoryUserIds[category.id] || []
               const selectedCount = userIds.filter((userId) => selectedUserIds.has(userId)).length
@@ -243,26 +244,28 @@ export function DirectMessagePanel({
                 <button
                   key={category.id}
                   onClick={() => handleCategoryToggle(category.id)}
-                  className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left transition-all ${
+                  className={`group flex items-center justify-between rounded-[1.35rem] border px-5 py-4 text-left transition-all ${
                     allSelected
-                      ? 'border-blue-500 bg-blue-50 text-blue-900 shadow-sm'
-                      : 'border-border bg-background hover:border-blue-200 hover:bg-blue-50/40'
+                      ? 'border-[#7a1016] bg-[linear-gradient(180deg,rgba(46,7,10,0.88),rgba(18,18,18,0.98))] text-foreground shadow-[0_24px_50px_-28px_rgba(229,9,20,0.34)]'
+                      : 'border-[#2d2d2d] bg-[#101010] hover:border-[#4a1418] hover:bg-[#151515]'
                   }`}
                 >
                   <div>
-                    <div className="text-sm font-bold">{category.label}</div>
-                    <div className="text-[11px] text-muted-foreground">
+                    <div className={`text-sm font-semibold tracking-tight ${allSelected ? 'text-white' : 'text-foreground'}`}>
+                      {category.label}
+                    </div>
+                    <div className={`mt-1 text-[11px] ${allSelected ? 'text-zinc-300' : 'text-muted-foreground'}`}>
                       {selectedCount} / {userIds.length} 選択中
                     </div>
                   </div>
                   <span
-                    className={`flex h-5 w-5 items-center justify-center rounded border text-[11px] font-black ${
+                    className={`flex h-8 w-8 items-center justify-center rounded-full border text-[11px] font-black transition-all ${
                       allSelected
-                        ? 'border-blue-500 bg-blue-500 text-white'
-                        : 'border-border text-muted-foreground'
+                        ? 'border-primary bg-primary text-primary-foreground shadow-[0_0_20px_rgba(229,9,20,0.45)]'
+                        : 'border-[#343434] text-zinc-500 group-hover:border-[#585858]'
                     }`}
                   >
-                    {allSelected ? '✓' : ''}
+                    {allSelected ? <Check size={12} /> : null}
                   </span>
                 </button>
               )
@@ -270,7 +273,7 @@ export function DirectMessagePanel({
           </div>
         </section>
 
-        <section className="space-y-4 rounded-2xl border border-border/60 bg-background p-5">
+        <section className="space-y-4 rounded-[1.8rem] border border-border/70 bg-[#0e0e0e] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
           <div className="space-y-1">
             <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
               2. 未参加者だけを抽出
@@ -280,7 +283,7 @@ export function DirectMessagePanel({
             </p>
           </div>
 
-          <div className="rounded-xl border border-blue-500/15 bg-blue-50/30 p-3 text-xs text-blue-900">
+          <div className="rounded-[1.2rem] border border-[#4d1418] bg-[linear-gradient(180deg,rgba(48,8,11,0.76),rgba(16,16,16,0.96))] p-3 text-xs text-zinc-100">
             現在の抽出元: <span className="font-bold">{sourceDescription}</span>
           </div>
 
@@ -289,32 +292,32 @@ export function DirectMessagePanel({
             value={excludeChannelInput}
             onChange={(event) => setExcludeChannelInput(event.target.value)}
             placeholder="例: https://app.slack.com/client/T.../C08G6PS153M"
-            className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            className="w-full rounded-[1.2rem] border border-[#2f2f2f] bg-[#121212] px-3 py-3 text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-ring"
           />
 
           <button
             onClick={handleBuildAudience}
             disabled={!canBuildAudience}
-            className="w-full h-11 rounded-xl border border-blue-500/20 bg-blue-50 text-sm font-black text-blue-700 hover:bg-blue-100 disabled:opacity-40 transition-all"
+            className="w-full h-12 rounded-[1.2rem] border border-[#5d151a] bg-[#151515] text-sm font-semibold text-white transition-all hover:border-primary hover:bg-[linear-gradient(180deg,rgba(55,8,12,0.92),rgba(21,21,21,0.98))] disabled:opacity-40"
           >
             {isBuildingAudience ? '抽出中...' : 'この条件で未参加者だけ残す'}
           </button>
 
           {audienceSummary && (
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-50/40 p-4 text-xs space-y-2">
-              <p className="font-bold text-emerald-800">
+            <div className="space-y-2 rounded-[1.2rem] border border-[#5d151a] bg-[linear-gradient(180deg,rgba(55,8,12,0.88),rgba(17,17,17,0.98))] p-4 text-xs">
+              <p className="font-bold text-white">
                 {audienceSummary.channelName
                   ? `#${audienceSummary.channelName} の所属を除外しました`
                   : audienceSummary.channelId}
               </p>
               <div className="grid grid-cols-3 gap-2 text-[10px] font-bold uppercase tracking-tight">
-                <div className="rounded-lg bg-white/60 p-2">
+                <div className="rounded-xl bg-black/24 p-2">
                   母数: <span className="text-sm">{audienceSummary.sourceCount}</span>
                 </div>
-                <div className="rounded-lg bg-white/60 p-2">
+                <div className="rounded-xl bg-black/24 p-2">
                   除外: <span className="text-sm">{audienceSummary.excludedCount}</span>
                 </div>
-                <div className="rounded-lg bg-white/60 p-2">
+                <div className="rounded-xl bg-black/24 p-2">
                   対象: <span className="text-sm">{audienceSummary.targetCount}</span>
                 </div>
               </div>
@@ -328,7 +331,7 @@ export function DirectMessagePanel({
           )}
         </section>
 
-        <section className="space-y-4 rounded-2xl border border-border/60 bg-background p-5">
+        <section className="space-y-4 rounded-[1.8rem] border border-border/70 bg-[#0e0e0e] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
@@ -347,28 +350,28 @@ export function DirectMessagePanel({
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 text-[10px] font-bold uppercase tracking-tight md:grid-cols-4">
-            <div className="rounded-lg bg-secondary/40 p-2">
+          <div className="grid grid-cols-2 gap-3 text-[10px] font-bold uppercase tracking-[0.14em] md:grid-cols-4">
+            <div className="rounded-[1.1rem] border border-[#232323] bg-[#141414] p-3 text-zinc-200">
               選択中: <span className="text-sm">{selectedUsers.length}</span>
             </div>
-            <div className="rounded-lg bg-emerald-50 p-2 text-emerald-700">
+            <div className="rounded-[1.1rem] border border-[#232323] bg-[#141414] p-3 text-zinc-200">
               分類済み: <span className="text-sm">{selectedUsers.length - uncategorizedUsers.length}</span>
             </div>
-            <div className="rounded-lg bg-amber-50 p-2 text-amber-700">
+            <div className="rounded-[1.1rem] border border-[#4d3a10] bg-[#17130b] p-3 text-amber-200">
               未分類: <span className="text-sm">{uncategorizedUsers.length}</span>
             </div>
-            <div className="rounded-lg bg-blue-50 p-2 text-blue-700">
+            <div className="rounded-[1.1rem] border border-[#4d1418] bg-[#170b0c] p-3 text-red-100">
               表示フィルター: <span className="text-sm">{currentFilterLabel}</span>
             </div>
           </div>
 
           {uncategorizedUsers.length > 0 && (
-            <div className="rounded-xl border border-amber-500/25 bg-amber-50 p-3 text-xs text-amber-900">
+            <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-xs text-amber-200">
               未分類ユーザーが含まれています。送信前に本当に対象者か確認してください。
             </div>
           )}
 
-          <div className="max-h-72 overflow-auto rounded-xl border border-border">
+          <div className="max-h-72 overflow-auto rounded-xl border border-border bg-background/92">
             {selectedUsers.length === 0 ? (
               <div className="p-4 text-sm text-muted-foreground text-center">
                 まだ対象が選ばれていません。
@@ -383,7 +386,7 @@ export function DirectMessagePanel({
                   <div
                     key={user.id}
                     className={`flex items-center gap-3 border-b border-border/60 px-3 py-2 last:border-b-0 ${
-                      user.categoryId ? 'bg-background' : 'bg-amber-50/70'
+                      user.categoryId ? 'bg-background/70' : 'bg-amber-500/10'
                     }`}
                   >
                     {user.avatarUrl && (
@@ -400,7 +403,7 @@ export function DirectMessagePanel({
                       </div>
                     </div>
                     {!user.categoryId && (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                      <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-200">
                         未分類
                       </span>
                     )}
@@ -431,28 +434,28 @@ export function DirectMessagePanel({
             value={dmMessage}
             onChange={(event) => setDmMessage(event.target.value)}
             placeholder="送信したいDM本文を入力..."
-            className="min-h-32 w-full rounded-xl border border-input bg-background px-3 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+            className="min-h-32 w-full rounded-xl border border-input bg-background/92 px-3 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-y"
           />
 
           <button
             onClick={() => setShowConfirm(true)}
             disabled={!canDirectMessage}
-            className="w-full h-12 rounded-xl bg-slate-900 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-40 transition-all"
+            className="w-full h-12 rounded-xl bg-primary text-sm font-black text-primary-foreground shadow-[0_24px_50px_-30px_rgba(229,9,20,0.6)] hover:bg-[#f6121d] disabled:opacity-40 transition-all"
           >
             送信対象を確認してDM送信
           </button>
 
           {isDirectMessaging && dmProgress && (
-            <div className="space-y-3 rounded-xl border border-slate-500/20 bg-slate-50/60 p-4 animate-in fade-in">
-              <div className="flex justify-between text-[10px] font-bold text-slate-700">
+            <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/10 p-4 animate-in fade-in">
+              <div className="flex justify-between text-[10px] font-bold text-primary-foreground">
                 <span>進行状況</span>
                 <span>
                   {dmProgress.done} / {dmProgress.total}
                 </span>
               </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200 shadow-inner">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-white/10 shadow-inner">
                 <div
-                  className="h-full bg-slate-800 transition-all duration-300"
+                  className="h-full bg-primary transition-all duration-300"
                   style={{ width: `${dmProgress.total > 0 ? (dmProgress.done / dmProgress.total) * 100 : 0}%` }}
                 />
               </div>
@@ -469,9 +472,9 @@ export function DirectMessagePanel({
           )}
 
           {dmResult && !isDirectMessaging && (
-            <div className="rounded-xl border border-green-500/20 bg-green-50/30 p-4 text-xs space-y-2">
+            <div className="rounded-xl border border-primary/20 bg-primary/10 p-4 text-xs space-y-2">
               <div className="flex justify-between items-center">
-                <p className="font-bold text-green-800">
+                <p className="font-bold text-primary-foreground">
                   {dmResult.cancelled ? 'DM送信を停止しました' : 'DM送信が完了しました'}
                 </p>
                 <button
@@ -482,11 +485,11 @@ export function DirectMessagePanel({
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-2 text-[10px] font-bold uppercase tracking-tighter">
-                <div className="bg-white/50 p-2 rounded-lg">
-                  成功: <span className="text-green-600 text-sm">{dmResult.totalSucceeded}</span>
+                <div className="rounded-lg bg-black/20 p-2">
+                  成功: <span className="text-primary-foreground text-sm">{dmResult.totalSucceeded}</span>
                 </div>
-                <div className="bg-white/50 p-2 rounded-lg">
-                  失敗: <span className="text-red-600 text-sm">{dmResult.totalFailed}</span>
+                <div className="rounded-lg bg-black/20 p-2">
+                  失敗: <span className="text-red-300 text-sm">{dmResult.totalFailed}</span>
                 </div>
               </div>
             </div>

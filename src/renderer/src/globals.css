@@ -1,57 +1,54 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #ffffff;
-  --color-foreground: #0a0a0a;
-  --color-card: #ffffff;
-  --color-card-foreground: #0a0a0a;
-  --color-popover: #ffffff;
-  --color-popover-foreground: #0a0a0a;
-  --color-primary: #18181b;
-  --color-primary-foreground: #fafafa;
-  --color-secondary: #f4f4f5;
-  --color-secondary-foreground: #18181b;
-  --color-muted: #f4f4f5;
-  --color-muted-foreground: #71717a;
-  --color-accent: #f4f4f5;
-  --color-accent-foreground: #18181b;
+  --color-background: #090909;
+  --color-foreground: #f5f5f1;
+  --color-card: #141414;
+  --color-card-foreground: #f5f5f1;
+  --color-popover: #161616;
+  --color-popover-foreground: #f5f5f1;
+  --color-primary: #e50914;
+  --color-primary-foreground: #fff4f4;
+  --color-secondary: #1b1b1b;
+  --color-secondary-foreground: #ece9e4;
+  --color-muted: #181818;
+  --color-muted-foreground: #9f9f9a;
+  --color-accent: #202020;
+  --color-accent-foreground: #f5f5f1;
   --color-destructive: #ef4444;
   --color-destructive-foreground: #fafafa;
-  --color-border: #e4e4e7;
-  --color-input: #e4e4e7;
-  --color-ring: #18181b;
-  --radius: 0.5rem;
+  --color-border: #2b2b2b;
+  --color-input: #2e2e2e;
+  --color-ring: #e50914;
+  --radius: 0.9rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  @theme {
-    --color-background: #09090b;
-    --color-foreground: #fafafa;
-    --color-card: #09090b;
-    --color-card-foreground: #fafafa;
-    --color-popover: #09090b;
-    --color-popover-foreground: #fafafa;
-    --color-primary: #fafafa;
-    --color-primary-foreground: #18181b;
-    --color-secondary: #27272a;
-    --color-secondary-foreground: #fafafa;
-    --color-muted: #27272a;
-    --color-muted-foreground: #a1a1aa;
-    --color-accent: #27272a;
-    --color-accent-foreground: #fafafa;
-    --color-destructive: #7f1d1d;
-    --color-destructive-foreground: #fafafa;
-    --color-border: #27272a;
-    --color-input: #27272a;
-    --color-ring: #d4d4d8;
-  }
+html,
+body,
+#root {
+  height: 100%;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    "SF Pro Display",
+    "SF Pro Text",
+    "Avenir Next",
+    "Hiragino Sans",
+    "Hiragino Kaku Gothic ProN",
+    "Noto Sans JP",
+    "Segoe UI",
+    sans-serif;
   background-color: var(--color-background);
   color: var(--color-foreground);
+  background-image:
+    radial-gradient(circle at top, rgba(229, 9, 20, 0.16), transparent 24%),
+    radial-gradient(circle at 82% 18%, rgba(229, 9, 20, 0.12), transparent 20%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 18%);
   overflow: hidden;
+  letter-spacing: -0.01em;
+  text-rendering: optimizeLegibility;
+  color-scheme: dark;
 }
 
 .drag-region {
@@ -60,4 +57,25 @@ body {
 
 .no-drag {
   -webkit-app-region: no-drag;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(229, 9, 20, 0.34) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(229, 9, 20, 0.28);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
 }

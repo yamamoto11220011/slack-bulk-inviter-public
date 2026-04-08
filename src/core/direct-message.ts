@@ -1,6 +1,7 @@
 import { SlackClient } from './slack-client'
 import type {
   DirectMessageBatchResult,
+  DirectMessageExecutionItemResult,
   DirectMessageProgress,
   DirectMessageUserResult
 } from './types'
@@ -50,7 +51,8 @@ export class DirectMessageService {
     imageUrls: string[] | null = null,
     localFilePaths: string[] | null = null,
     onProgress?: (progress: DirectMessageProgress) => void,
-    shouldCancel?: () => boolean
+    shouldCancel?: () => boolean,
+    onItemResult?: (result: DirectMessageExecutionItemResult) => void
   ): Promise<DirectMessageBatchResult> {
     const uniqueUserIds = Array.from(new Set(userIds))
     const total = uniqueUserIds.length
@@ -94,6 +96,12 @@ export class DirectMessageService {
         const userId = uniqueUserIds[taskIndex]
         const result = await this.sendOne(userId, message, imageUrls, localFilePaths)
         results.push(result)
+        onItemResult?.({
+          userId: result.userId,
+          channelId: result.channelId,
+          status: result.success ? 'success' : 'failed',
+          error: result.error
+        })
 
         if (result.success) {
           successCount += 1

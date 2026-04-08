@@ -1,6 +1,7 @@
 import { SlackClient } from './slack-client'
 import type {
   InviteBatchResult,
+  InviteExecutionItemResult,
   InvitePreviewChannelResult,
   InvitePreviewResult,
   MultiInviteBatchResult
@@ -64,7 +65,8 @@ export class InviteService {
     channelId: string,
     userIds: string[],
     onProgress?: (done: number, total: number) => void,
-    shouldCancel?: () => boolean
+    shouldCancel?: () => boolean,
+    onItemResult?: (result: InviteExecutionItemResult) => void
   ): Promise<InviteBatchResult & { processedCount: number; cancelled: boolean }> {
     const uniqueUserIds = Array.from(new Set(userIds))
     const result: InviteBatchResult = {
@@ -97,6 +99,13 @@ export class InviteService {
             failed: [],
             alreadyInChannel
           })
+          for (const userId of alreadyInChannel) {
+            onItemResult?.({
+              channelId,
+              userId,
+              status: 'already_in_channel'
+            })
+          }
           done = alreadyInChannel.length
           onProgress?.(done, uniqueUserIds.length)
         }
@@ -118,6 +127,29 @@ export class InviteService {
       result.totalSucceeded += inviteResult.succeeded.length
       result.totalFailed += inviteResult.failed.length
       result.totalAlreadyInChannel += inviteResult.alreadyInChannel.length
+
+      for (const userId of inviteResult.succeeded) {
+        onItemResult?.({
+          channelId,
+          userId,
+          status: 'success'
+        })
+      }
+      for (const userId of inviteResult.alreadyInChannel) {
+        onItemResult?.({
+          channelId,
+          userId,
+          status: 'already_in_channel'
+        })
+      }
+      for (const failure of inviteResult.failed) {
+        onItemResult?.({
+          channelId,
+          userId: failure.userId,
+          status: 'failed',
+          error: failure.error
+        })
+      }
 
       done += chunk.length
       onProgress?.(done, uniqueUserIds.length)

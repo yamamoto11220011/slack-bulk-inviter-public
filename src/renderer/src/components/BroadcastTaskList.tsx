@@ -1,7 +1,17 @@
+import {
+  CheckCircle2,
+  ClipboardList,
+  PencilLine,
+  Play,
+  Square,
+  Trash2,
+  XCircle
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../stores/app-store'
-import { BroadcastProgress, BroadcastTask, BroadcastLog } from '../../../core/types'
+import { BroadcastProgress, BroadcastTask } from '../../../core/types'
+import { describeSchedule } from '../lib/broadcast-schedule'
 
 interface Props {
   onEdit?: (task: BroadcastTask) => void
@@ -62,10 +72,10 @@ export function BroadcastTaskList({ onEdit }: Props = {}) {
   }
 
   return (
-    <div className="space-y-3 p-4">
-      <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">メッセージタスク一覧</h3>
+    <div className="space-y-4 p-1">
+      <h3 className="text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">メッセージタスク一覧</h3>
       {broadcastTasks.length === 0 && (
-        <div className="text-sm text-muted-foreground py-8 text-center border-2 border-dashed rounded-lg">
+        <div className="rounded-[1.4rem] border border-dashed border-border/80 bg-card/60 py-10 text-center text-sm text-muted-foreground">
           タスクがありません。「新規作成」から追加してください。
         </div>
       )}
@@ -74,21 +84,24 @@ export function BroadcastTaskList({ onEdit }: Props = {}) {
           const progress = taskProgress[task.id]
           const isRunning = task.status === 'running'
           const showLogs = expandedLogs.has(task.id)
+          const scheduleSummary = describeSchedule(task.schedule)
 
           return (
-            <div key={task.id} className="group relative rounded-lg border bg-card p-3 shadow-sm hover:shadow-md transition-all">
+            <div key={task.id} className="group relative rounded-[1.5rem] border border-border/70 bg-card/90 p-4 shadow-[0_24px_70px_-46px_rgba(15,23,42,0.42)] transition-all hover:-translate-y-0.5 hover:shadow-[0_28px_80px_-42px_rgba(15,23,42,0.48)]">
               <div className="flex justify-between items-start mb-2">
                 <div>
-                  <h4 className="text-sm font-semibold truncate max-w-[180px]">{task.name}</h4>
-                  <p className="text-[10px] text-muted-foreground">
+                  <h4 className="max-w-[220px] truncate text-sm font-semibold">{task.name}</h4>
+                  <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
                     {task.channelIds.length} ch × {task.repeatCount} 回
-                    {task.schedule.repeatUntilStopped && ` • 無期限ループ`}
-                    {task.schedule.daysOfWeek && ` • ${task.schedule.daysOfWeek.map(d => ['日','月','火','水','木','金','土'][d]).join(',')}曜日`}
-                    {task.schedule.type === 'daily' && ` • 毎日 (${task.schedule.timeOfDay})`}
+                    {' • '}
+                    {scheduleSummary.shortLabel}
+                  </p>
+                  <p className="mt-1 text-[11px] text-foreground/80">
+                    {scheduleSummary.title}
                   </p>
                 </div>
                 <div className="flex flex-col items-end">
-                  <div className={`text-[10px] font-bold uppercase ${getStatusColor(task.status)}`}>
+                  <div className={`rounded-full bg-background/75 px-2.5 py-1 text-[10px] font-bold uppercase ${getStatusColor(task.status)}`}>
                     {task.status}
                   </div>
                   {task.lastRunAt && (
@@ -110,63 +123,70 @@ export function BroadcastTaskList({ onEdit }: Props = {}) {
                   </div>
                   <div className="flex justify-between text-[10px] text-muted-foreground">
                     <span>{progress.done} / {progress.total}</span>
-                    <span className="text-green-500 font-medium">✅ {progress.success}</span>
-                    <span className="text-red-500 font-medium">❌ {progress.fail}</span>
+                    <span className="inline-flex items-center gap-1 font-medium text-green-600"><CheckCircle2 size={11} />{progress.success}</span>
+                    <span className="inline-flex items-center gap-1 font-medium text-red-500"><XCircle size={11} />{progress.fail}</span>
                   </div>
                 </div>
               )}
 
-              <div className="mt-2 text-xs line-clamp-2 text-muted-foreground italic border-l-2 pl-2 py-1 bg-muted/30">
-                <div className="font-bold text-[9px] text-muted-foreground/60 mb-0.5">
+              <div className="mt-3 rounded-2xl border border-border/60 bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
+                <div className="mb-1 text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground/70">
                   MESSAGE {(task.nextMessageIndex ?? 0) + 1}/{(task.messages?.length ?? 1)}
                 </div>
-                "{(task.messages && task.nextMessageIndex !== undefined ? task.messages[task.nextMessageIndex] : task.message) || 'No message'}"
+                <div className="line-clamp-2 italic">
+                  "{(task.messages && task.nextMessageIndex !== undefined ? task.messages[task.nextMessageIndex] : task.message) || 'No message'}"
+                </div>
               </div>
 
-              <div className="mt-3 flex gap-2">
+              <div className="mt-4 flex flex-wrap gap-2">
                 {!isRunning ? (
                   <button
                     onClick={() => handleStart(task.id)}
-                    className="flex-1 rounded bg-blue-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-blue-700 transition-colors"
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-[10px] font-semibold text-primary-foreground transition-all hover:bg-primary/92"
                   >
-                    ▶️ 今すぐ実行
+                    <Play size={12} />
+                    今すぐ実行
                   </button>
                 ) : (
                   <button
                     onClick={() => handleCancel(task.id)}
-                    className="flex-1 rounded bg-red-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-red-700 transition-colors"
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-destructive px-3 py-2 text-[10px] font-semibold text-destructive-foreground transition-all hover:bg-destructive/92"
                   >
-                    ⏹ 停止
+                    <Square size={12} />
+                    停止
                   </button>
                 )}
                 <button
                   onClick={() => toggleLogs(task.id)}
-                  className={`rounded border px-2 py-1 text-[10px] transition-colors ${
+                  className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[10px] font-semibold transition-colors ${
                     showLogs ? 'bg-secondary text-secondary-foreground' : 'border-border text-muted-foreground hover:bg-accent'
                   }`}
                 >
-                   {showLogs ? '📋 ログを閉じる' : '📋 ログを表示'}
+                  <ClipboardList size={12} />
+                  {showLogs ? 'ログを閉じる' : 'ログを表示'}
                 </button>
                 {onEdit && (
                   <button
                     onClick={() => onEdit(task)}
-                    className="rounded border border-primary/30 px-2 py-1 text-[10px] text-primary hover:bg-primary/10 transition-colors"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 px-3 py-2 text-[10px] font-semibold text-primary transition-colors hover:bg-primary/10"
                   >
-                    ✏️ 編集
+                    <PencilLine size={12} />
+                    編集
                   </button>
                 )}
                 <button
                   onClick={() => deleteTask(task.id)}
-                  className="rounded border border-destructive/30 px-2 py-1 text-[10px] text-destructive hover:bg-destructive/10 transition-colors"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-destructive/30 px-3 py-2 text-[10px] font-semibold text-destructive transition-colors hover:bg-destructive/10"
                 >
+                  <Trash2 size={12} />
                   削除
                 </button>
               </div>
 
               {/* ログビューアー */}
               {showLogs && (
-                <div className="mt-3 border rounded-md bg-muted/20 overflow-hidden">
-                  <div className="bg-muted px-2 py-1 text-[9px] font-bold text-muted-foreground border-b flex justify-between">
+                <div className="mt-3 overflow-hidden rounded-2xl border border-border/70 bg-muted/20">
+                  <div className="flex justify-between border-b border-border/70 bg-muted px-3 py-2 text-[9px] font-bold text-muted-foreground">
                     <span>RECENT LOGS (MAX 100)</span>
                     <span>{task.logs?.length || 0} ITEMS</span>
                   </div>
@@ -208,16 +228,10 @@ export function BroadcastTaskList({ onEdit }: Props = {}) {
 
               {/* スケジュール詳細情報 */}
               {task.status === 'scheduled' && (
-                <div className="mt-2 text-[10px] text-purple-500 font-medium space-y-0.5">
-                  {task.schedule.type === 'once' && task.schedule.scheduledAt && (
-                    <div>⏰ 予定: {new Date(task.schedule.scheduledAt).toLocaleString()}</div>
-                  )}
-                  {task.schedule.startDate && (
-                    <div>📅 開始: {new Date(task.schedule.startDate).toLocaleDateString()}</div>
-                  )}
-                  {task.schedule.endDate && (
-                    <div>📅 終了: {new Date(task.schedule.endDate).toLocaleDateString()}</div>
-                  )}
+                <div className="mt-3 space-y-1 text-[10px] font-medium text-primary/78">
+                  {scheduleSummary.details.map((detail) => (
+                    <div key={detail}>• {detail}</div>
+                  ))}
                 </div>
               )}
             </div>

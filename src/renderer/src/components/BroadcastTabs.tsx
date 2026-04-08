@@ -1,3 +1,4 @@
+import { Layers3, ListChecks, PlusSquare } from 'lucide-react'
 import { useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../stores/app-store'
@@ -31,41 +32,47 @@ export function BroadcastTabs({ onQuickBroadcast, isQuickBroadcasting, quickBroa
     setActiveTab('form')
   }
 
+  const tabs: Array<{ id: Tab; label: string; hint: string; Icon: typeof Layers3 }> = [
+    { id: 'quick', label: 'クイック送信', hint: 'いま送る', Icon: Layers3 },
+    { id: 'tasks', label: 'タスク管理', hint: '一覧と履歴', Icon: ListChecks },
+    { id: 'form', label: editingTask ? 'タスク編集' : '新規作成', hint: editingTask ? '編集中' : '自動送信を追加', Icon: PlusSquare }
+  ]
+
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex border-b border-border mb-2 bg-muted/20">
-        <button
-          onClick={() => setActiveTab('quick')}
-          className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
-            activeTab === 'quick' ? 'border-blue-500 text-blue-500' : 'border-transparent text-muted-foreground'
-          }`}
-        >
-          クイック送信
-        </button>
-        <button
-          onClick={() => setActiveTab('tasks')}
-          className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
-            activeTab === 'tasks' ? 'border-green-500 text-green-500' : 'border-transparent text-muted-foreground'
-          }`}
-        >
-          タスク管理
-        </button>
-        <button
-          onClick={() => {
-            if (activeTab === 'form') {
-              setEditingTask(undefined) // 既にフォームを開いている時に押したら新規作成にリセット
-            }
-            setActiveTab('form')
-          }}
-          className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
-            activeTab === 'form' ? 'border-purple-500 text-purple-500' : 'border-transparent text-muted-foreground'
-          }`}
-        >
-          {activeTab === 'form' && editingTask ? 'タスク編集 (タップで新規)' : '新規作成'}
-        </button>
+    <div className="flex h-full flex-col gap-4">
+      <div className="rounded-[1.4rem] border border-border/70 bg-card/85 p-2 shadow-[0_24px_70px_-46px_rgba(15,23,42,0.42)]">
+        <div className="grid gap-2 md:grid-cols-3">
+          {tabs.map(({ id, label, hint, Icon }) => {
+            const isActive = activeTab === id
+            return (
+              <button
+                key={id}
+                onClick={() => {
+                  if (id === 'form' && activeTab === 'form') {
+                    setEditingTask(undefined)
+                  }
+                  setActiveTab(id)
+                }}
+                className={`flex items-center gap-3 rounded-[1.1rem] px-4 py-3 text-left transition-all ${
+                  isActive
+                    ? 'bg-primary text-primary-foreground shadow-[0_20px_44px_-28px_rgba(15,23,42,0.72)]'
+                    : 'bg-background/65 text-muted-foreground hover:bg-background hover:text-foreground'
+                }`}
+              >
+                <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${isActive ? 'bg-white/12' : 'bg-secondary/80 text-primary'}`}>
+                  <Icon size={18} />
+                </div>
+                <div className="space-y-0.5">
+                  <div className="text-sm font-semibold">{label}</div>
+                  <div className={`text-[11px] ${isActive ? 'text-primary-foreground/72' : 'text-muted-foreground'}`}>{hint}</div>
+                </div>
+              </button>
+            )
+          })}
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto relative">
+      <div className="relative flex-1 overflow-y-auto">
         <div className={activeTab === 'quick' ? 'block' : 'hidden'}>
           <div className="space-y-4">
             {quickBroadcastContent}
@@ -77,8 +84,8 @@ export function BroadcastTabs({ onQuickBroadcast, isQuickBroadcasting, quickBroa
         </div>
 
         <div className={activeTab === 'form' ? 'block' : 'hidden'}>
-          <div className="p-4">
-            <h3 className="text-xs font-bold uppercase text-muted-foreground mb-4">
+          <div className="rounded-[1.5rem] border border-border/70 bg-card/84 p-5 shadow-[0_24px_70px_-46px_rgba(15,23,42,0.42)]">
+            <h3 className="mb-4 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground">
               {editingTask ? 'タスクの編集' : '新しい自動送信タスク'}
             </h3>
             <BroadcastTaskForm

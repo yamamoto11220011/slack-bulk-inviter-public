@@ -35,17 +35,17 @@ function formatDateTime(value: string): string {
 }
 
 function getRunTone(record: InviteRunRecord): string {
-  if (record.status === 'failed') return 'border-red-500/20 bg-red-50/40 text-red-700'
-  if (record.status === 'cancelled') return 'border-amber-500/20 bg-amber-50/40 text-amber-700'
-  if (record.mode === 'dry-run') return 'border-blue-500/20 bg-blue-50/40 text-blue-700'
-  return 'border-emerald-500/20 bg-emerald-50/40 text-emerald-700'
+  if (record.status === 'failed') return 'border-red-500/25 bg-red-500/10 text-red-200'
+  if (record.status === 'cancelled') return 'border-amber-500/20 bg-amber-500/10 text-amber-200'
+  if (record.mode === 'dry-run') return 'border-zinc-500/25 bg-zinc-500/10 text-zinc-200'
+  return 'border-primary/25 bg-primary/10 text-primary-foreground'
 }
 
 function getLogTone(status: InviteRunRecord['logs'][number]['status']): string {
-  if (status === 'failed') return 'text-red-700'
-  if (status === 'already_in_channel') return 'text-blue-700'
-  if (status === 'planned') return 'text-slate-700'
-  return 'text-emerald-700'
+  if (status === 'failed') return 'text-red-300'
+  if (status === 'already_in_channel') return 'text-zinc-300'
+  if (status === 'planned') return 'text-amber-200'
+  return 'text-primary-foreground'
 }
 
 export function InvitePanel() {
@@ -351,19 +351,19 @@ export function InvitePanel() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-background">
-      <div className="border-b border-border px-5 py-4">
+    <div className="flex h-full flex-col bg-background/50">
+      <div className="border-b border-border/70 px-5 py-4">
         <div className="mb-3">
           <h2 className="text-sm font-black uppercase tracking-widest text-muted-foreground/60">
             Invite Admin
           </h2>
           <h3 className="text-lg font-bold tracking-tight">招待管理</h3>
         </div>
-        <div className="grid grid-cols-2 gap-2 rounded-xl bg-muted/30 p-1">
+        <div className="grid grid-cols-2 gap-2 rounded-xl bg-muted/40 p-1">
           <button
             onClick={() => setActiveTab('execute')}
             className={`rounded-lg px-3 py-2 text-sm font-bold transition ${
-              activeTab === 'execute' ? 'bg-background shadow-sm' : 'text-muted-foreground'
+              activeTab === 'execute' ? 'bg-card text-foreground shadow-[0_18px_36px_-28px_rgba(0,0,0,0.85)]' : 'text-muted-foreground'
             }`}
           >
             実行
@@ -371,7 +371,7 @@ export function InvitePanel() {
           <button
             onClick={() => setActiveTab('history')}
             className={`rounded-lg px-3 py-2 text-sm font-bold transition ${
-              activeTab === 'history' ? 'bg-background shadow-sm' : 'text-muted-foreground'
+              activeTab === 'history' ? 'bg-card text-foreground shadow-[0_18px_36px_-28px_rgba(0,0,0,0.85)]' : 'text-muted-foreground'
             }`}
           >
             履歴
@@ -381,13 +381,13 @@ export function InvitePanel() {
 
       <div className="flex-1 overflow-auto px-5 py-5">
         {error && (
-          <div className="mb-4 rounded-xl border border-red-500/20 bg-red-50/40 px-4 py-3 text-sm text-red-700">
+          <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
             {error}
           </div>
         )}
 
         {notice && (
-          <div className="mb-4 rounded-xl border border-emerald-500/20 bg-emerald-50/40 px-4 py-3 text-sm text-emerald-700">
+          <div className="mb-4 rounded-xl border border-primary/25 bg-primary/10 px-4 py-3 text-sm text-primary-foreground">
             {notice}
           </div>
         )}
@@ -406,7 +406,7 @@ export function InvitePanel() {
               <ChannelPicker />
             </section>
 
-            <section className="space-y-4 rounded-2xl border border-border/60 bg-secondary/20 p-4">
+            <section className="space-y-4 rounded-2xl border border-border/60 bg-secondary/30 p-4">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
@@ -423,7 +423,7 @@ export function InvitePanel() {
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl bg-background/70 p-3">
+                <div className="rounded-xl bg-background/90 p-3">
                   <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
                     選択中ユーザー
                   </div>
@@ -432,7 +432,7 @@ export function InvitePanel() {
                     <span className="ml-1 text-xs font-medium text-muted-foreground">人</span>
                   </div>
                 </div>
-                <div className="rounded-xl bg-background/70 p-3">
+                <div className="rounded-xl bg-background/90 p-3">
                   <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
                     カテゴリ数
                   </div>
@@ -444,30 +444,30 @@ export function InvitePanel() {
               </div>
 
               {importedCsv && (
-                <div className="rounded-xl border border-blue-500/20 bg-blue-50/30 p-4 text-sm">
+                <div className="rounded-xl border border-primary/20 bg-primary/10 p-4 text-sm text-primary-foreground">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-bold text-blue-800">{importedCsv.fileName}</p>
-                      <p className="text-xs text-blue-700/80">
+                      <p className="font-bold">{importedCsv.fileName}</p>
+                      <p className="text-xs text-primary-foreground/70">
                         {importedCsv.columnName ? `列: ${importedCsv.columnName}` : '先頭列を使用'}
                       </p>
                     </div>
                     <button
                       onClick={() => setImportedCsv(null)}
-                      className="text-xs font-bold text-blue-700 hover:underline"
+                      className="text-xs font-bold text-primary-foreground/80 hover:underline"
                     >
                       CSV情報を閉じる
                     </button>
                   </div>
                   <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                    <div className="rounded-lg bg-white/70 p-2">一致: {importedCsv.matchedCount}</div>
-                    <div className="rounded-lg bg-white/70 p-2">重複: {importedCsv.duplicateCount}</div>
-                    <div className="rounded-lg bg-white/70 p-2">未一致: {importedCsv.unmatchedValues.length}</div>
+                    <div className="rounded-lg bg-black/20 p-2">一致: {importedCsv.matchedCount}</div>
+                    <div className="rounded-lg bg-black/20 p-2">重複: {importedCsv.duplicateCount}</div>
+                    <div className="rounded-lg bg-black/20 p-2">未一致: {importedCsv.unmatchedValues.length}</div>
                   </div>
                   {importedCsv.unmatchedValues.length > 0 && (
                     <div className="mt-3 space-y-2">
-                      <p className="text-xs font-bold text-blue-800">未一致の値</p>
-                      <div className="max-h-24 overflow-auto rounded-lg border border-blue-200/70 bg-white/70 p-2 text-xs">
+                      <p className="text-xs font-bold">未一致の値</p>
+                      <div className="max-h-24 overflow-auto rounded-lg border border-primary/20 bg-black/20 p-2 text-xs">
                         {importedCsv.unmatchedValues.slice(0, 30).map((value) => (
                           <div key={value}>{value}</div>
                         ))}
@@ -485,7 +485,7 @@ export function InvitePanel() {
               {selectedUsers.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-xs font-bold text-muted-foreground">選択中ユーザーの一部</p>
-                  <div className="max-h-28 overflow-auto rounded-xl border border-border bg-background/70 p-3">
+                  <div className="max-h-28 overflow-auto rounded-xl border border-border bg-background/90 p-3">
                     {selectedUsers.slice(0, 8).map((user) => (
                       <div key={user.id} className="flex items-center justify-between py-1 text-sm">
                         <span className="truncate font-medium">
@@ -506,7 +506,7 @@ export function InvitePanel() {
               )}
             </section>
 
-            <section className="space-y-4 rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
+            <section className="space-y-4 rounded-2xl border border-border/60 bg-card/90 p-4 shadow-[0_20px_60px_-46px_rgba(0,0,0,0.8)]">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
@@ -526,37 +526,37 @@ export function InvitePanel() {
               {preview ? (
                 <div className={`space-y-3 ${previewIsCurrent ? '' : 'opacity-80'}`}>
                   {!previewIsCurrent && (
-                    <div className="rounded-lg border border-amber-500/20 bg-amber-50/40 px-3 py-2 text-xs text-amber-800">
+                    <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
                       選択内容が変わったため、プレビューを更新してください。
                     </div>
                   )}
 
                   <div className="grid grid-cols-3 gap-2">
-                    <div className="rounded-xl bg-background/80 p-3">
+                    <div className="rounded-xl bg-background/92 p-3">
                       <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
                         総対象
                       </div>
                       <div className="mt-1 text-xl font-black">{preview.totalRequested}</div>
                     </div>
-                    <div className="rounded-xl bg-background/80 p-3">
+                    <div className="rounded-xl bg-background/92 p-3">
                       <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
                         招待見込み
                       </div>
-                      <div className="mt-1 text-xl font-black text-emerald-700">
+                      <div className="mt-1 text-xl font-black text-primary">
                         {preview.totalInvitable}
                       </div>
                     </div>
-                    <div className="rounded-xl bg-background/80 p-3">
+                    <div className="rounded-xl bg-background/92 p-3">
                       <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
                         既入メンバー
                       </div>
-                      <div className="mt-1 text-xl font-black text-blue-700">
+                      <div className="mt-1 text-xl font-black text-zinc-200">
                         {preview.totalAlreadyInChannel}
                       </div>
                     </div>
                   </div>
 
-                  <div className="max-h-44 overflow-auto rounded-xl border border-border bg-background/70">
+                  <div className="max-h-44 overflow-auto rounded-xl border border-border bg-background/92">
                     {preview.channelResults.map((channelResult) => (
                       <div
                         key={channelResult.channelId}
@@ -565,10 +565,10 @@ export function InvitePanel() {
                         <div className="truncate font-medium">
                           {channelResult.channelName ?? channelResult.channelId}
                         </div>
-                        <div className="text-emerald-700">
+                        <div className="text-primary">
                           追加 {channelResult.invitableCount}
                         </div>
-                        <div className="text-blue-700">
+                        <div className="text-zinc-300">
                           既入 {channelResult.alreadyInChannelCount}
                         </div>
                       </div>
@@ -582,7 +582,7 @@ export function InvitePanel() {
               )}
             </section>
 
-            <section className="space-y-4 rounded-2xl border border-border/60 bg-secondary/20 p-4">
+            <section className="space-y-4 rounded-2xl border border-border/60 bg-secondary/30 p-4">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
@@ -598,7 +598,7 @@ export function InvitePanel() {
                 </button>
               </div>
 
-              <div className="rounded-xl bg-background/70 p-3 text-sm">
+              <div className="rounded-xl bg-background/90 p-3 text-sm">
                 <span className="font-medium">管理者認証:</span>{' '}
                 {adminConfigured ? '設定済み' : '未設定'}
               </div>
@@ -614,7 +614,7 @@ export function InvitePanel() {
                 <button
                   onClick={() => void requestExecution(currentExecutionRequest)}
                   disabled={!canExecute}
-                  className="rounded-xl bg-blue-600 px-4 py-3 text-sm font-black text-white shadow-lg shadow-blue-500/30 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+                  className="rounded-xl bg-primary px-4 py-3 text-sm font-black text-primary-foreground shadow-[0_22px_46px_-24px_rgba(229,9,20,0.56)] hover:bg-[#f6121d] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
                 >
                   本実行
                 </button>
@@ -622,16 +622,16 @@ export function InvitePanel() {
             </section>
 
             {isInviting && inviteProgress && (
-              <div className="space-y-3 rounded-xl border border-blue-500/20 bg-blue-50/30 p-4">
-                <div className="flex justify-between text-[10px] font-bold text-blue-700">
+              <div className="space-y-3 rounded-xl border border-primary/20 bg-primary/10 p-4">
+                <div className="flex justify-between text-[10px] font-bold text-primary-foreground">
                   <span>進行状況</span>
                   <span>
                     {inviteProgress.done} / {inviteProgress.total}
                   </span>
                 </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-blue-100 shadow-inner">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-white/8 shadow-inner">
                   <div
-                    className="h-full bg-blue-600 transition-all duration-300"
+                    className="h-full bg-primary transition-all duration-300"
                     style={{
                       width: `${inviteProgress.total > 0 ? (inviteProgress.done / inviteProgress.total) * 100 : 0}%`
                     }}
@@ -642,7 +642,7 @@ export function InvitePanel() {
                 </p>
                 <button
                   onClick={() => void cancelInvite()}
-                  className="w-full text-[10px] font-bold text-red-600 hover:underline"
+                  className="w-full text-[10px] font-bold text-red-300 hover:underline"
                 >
                   招待を中止
                 </button>
@@ -658,9 +658,9 @@ export function InvitePanel() {
                   <span className="text-xs">{formatDateTime(lastRun.createdAt)}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-xs">
-                  <div className="rounded-lg bg-white/70 p-2">成功 {lastRun.summary.totalSucceeded}</div>
-                  <div className="rounded-lg bg-white/70 p-2">失敗 {lastRun.summary.totalFailed}</div>
-                  <div className="rounded-lg bg-white/70 p-2">
+                    <div className="rounded-lg bg-black/20 p-2">成功 {lastRun.summary.totalSucceeded}</div>
+                    <div className="rounded-lg bg-black/20 p-2">失敗 {lastRun.summary.totalFailed}</div>
+                    <div className="rounded-lg bg-black/20 p-2">
                     既入 {lastRun.summary.totalAlreadyInChannel}
                   </div>
                 </div>
@@ -696,7 +696,7 @@ export function InvitePanel() {
                       onClick={() => setSelectedHistoryId(record.id)}
                       className={`w-full rounded-xl border p-3 text-left transition ${
                         historyDetail?.id === record.id
-                          ? 'border-primary bg-primary/5'
+                          ? 'border-primary bg-primary/10'
                           : 'border-border hover:bg-accent/40'
                       }`}
                     >
@@ -721,7 +721,7 @@ export function InvitePanel() {
             </section>
 
             {historyDetail && (
-              <section className="space-y-4 rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
+              <section className="space-y-4 rounded-2xl border border-border/60 bg-card/90 p-4 shadow-[0_20px_60px_-46px_rgba(0,0,0,0.8)]">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground/70">
@@ -732,9 +732,9 @@ export function InvitePanel() {
                       {formatDateTime(historyDetail.createdAt)}
                     </p>
                   </div>
-                  <div className={`rounded-full px-3 py-1 text-xs font-bold ${getRunTone(historyDetail)}`}>
-                    {historyDetail.status}
-                  </div>
+                    <div className={`rounded-full px-3 py-1 text-xs font-bold ${getRunTone(historyDetail)}`}>
+                      {historyDetail.status}
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-xs">
@@ -756,10 +756,7 @@ export function InvitePanel() {
                   <p className="text-xs font-bold text-muted-foreground">チャンネル</p>
                   <div className="flex flex-wrap gap-2">
                     {historyDetail.channelNames.map((name) => (
-                      <span
-                        key={name}
-                        className="rounded-full border border-border bg-background px-3 py-1 text-xs"
-                      >
+                      <span key={name} className="rounded-full border border-border bg-background/92 px-3 py-1 text-xs">
                         {name}
                       </span>
                     ))}
@@ -767,7 +764,7 @@ export function InvitePanel() {
                 </div>
 
                 {historyDetail.csvFileName && (
-                  <div className="rounded-lg bg-secondary/30 p-3 text-xs">
+                  <div className="rounded-lg bg-secondary/40 p-3 text-xs">
                     CSV: {historyDetail.csvFileName}
                   </div>
                 )}
@@ -782,7 +779,7 @@ export function InvitePanel() {
                   <button
                     onClick={() => void handleRerunHistory(historyDetail)}
                     disabled={isInviting}
-                    className="rounded-xl bg-blue-600 px-4 py-3 text-sm font-black text-white hover:bg-blue-700 disabled:opacity-50"
+                    className="rounded-xl bg-primary px-4 py-3 text-sm font-black text-primary-foreground hover:bg-[#f6121d] disabled:opacity-50"
                   >
                     再実行
                   </button>
@@ -790,7 +787,7 @@ export function InvitePanel() {
 
                 <div className="space-y-2">
                   <p className="text-xs font-bold text-muted-foreground">成功/失敗ログ</p>
-                  <div className="max-h-64 overflow-auto rounded-xl border border-border bg-background/70">
+                  <div className="max-h-64 overflow-auto rounded-xl border border-border bg-background/92">
                     {historyDetail.logs.length === 0 ? (
                       <div className="px-4 py-6 text-center text-sm text-muted-foreground">
                         ログがありません。
@@ -821,7 +818,7 @@ export function InvitePanel() {
       {showPinDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowPinDialog(null)} />
-          <div className="relative w-full max-w-sm rounded-2xl border border-border bg-background p-6 shadow-xl">
+          <div className="relative w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-[0_28px_80px_-32px_rgba(0,0,0,0.9)]">
             <h4 className="text-lg font-bold">
               {showPinDialog === 'setup' ? '管理者PINを設定' : '管理者PINを入力'}
             </h4>

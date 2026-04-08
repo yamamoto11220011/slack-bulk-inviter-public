@@ -1,3 +1,4 @@
+import { Hash, LockKeyhole, RefreshCw } from 'lucide-react'
 import { useState, useMemo, useDeferredValue } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../stores/app-store'
@@ -76,11 +77,11 @@ export function ChannelPicker() {
       return (
         <label
           key={channel.id}
-          className={`flex cursor-pointer items-center justify-between px-3 py-1.5 text-sm transition-colors hover:bg-accent/50 ${!channel.isMember ? 'opacity-60' : ''}`}
+          className={`flex cursor-pointer items-center justify-between rounded-xl border border-transparent px-3 py-2 text-sm transition-all hover:border-border/60 hover:bg-accent/45 ${!channel.isMember ? 'opacity-60' : ''}`}
         >
           <div className="flex flex-col">
-            <span className="flex items-center gap-1">
-              {channel.isPrivate ? '🔒 ' : '# '}
+            <span className="flex items-center gap-2">
+              {channel.isPrivate ? <LockKeyhole size={14} className="text-muted-foreground" /> : <Hash size={14} className="text-muted-foreground" />}
               {channel.name}
               {!channel.isMember && (
                 <span className="ml-1 text-[8px] font-bold uppercase bg-muted px-1 rounded text-muted-foreground">
@@ -106,20 +107,20 @@ export function ChannelPicker() {
   const allSelected = allChannels.length > 0 && selectedBroadcastChannelIds.length === allChannels.length
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4 p-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           送信先チャンネル
         </h3>
         <button
           onClick={handleSync}
           disabled={isSyncing}
-          className="text-[10px] font-bold text-primary hover:underline disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-background/75 px-3 py-1.5 text-[10px] font-semibold text-primary transition-all hover:bg-background disabled:opacity-50"
         >
-          {isSyncing ? '同期中...' : '🔄 同期'}
+          <RefreshCw size={11} className={isSyncing ? 'animate-spin' : ''} />
+          {isSyncing ? '同期中...' : '同期'}
         </button>
       </div>
-
 
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>{selectedBroadcastChannelIds.length} / {allChannels.length} 件選択中 (参加済み: {memberChannelsCount})</span>
@@ -142,10 +143,10 @@ export function ChannelPicker() {
         placeholder="チャンネルを検索..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        className="flex h-8 w-full rounded-md border border-input bg-background px-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        className="flex h-10 w-full rounded-xl border border-input bg-background/75 px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
       />
 
-      <div className="max-h-56 overflow-auto rounded-md border border-border relative">
+      <div className="relative max-h-56 overflow-auto rounded-2xl border border-border/70 bg-background/55">
         {search !== deferredSearch && (
             <div className="absolute inset-0 bg-background/50 animate-pulse z-10" />
         )}

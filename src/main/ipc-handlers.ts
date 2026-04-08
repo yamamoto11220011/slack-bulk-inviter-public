@@ -10,9 +10,8 @@ import { SlackClient } from '../core/slack-client'
 import { SyncService } from '../core/sync'
 import { InviteService } from '../core/invite'
 import { parseInviteCsv } from '../core/invite-csv'
-import { BroadcastService } from '../core/broadcast'
 import { BroadcastManager } from '../core/broadcast-manager'
-import { DirectMessageService } from '../core/direct-message'
+import { JobManager } from '../core/job-manager'
 import { resolveSlackChannelId } from '../core/slack-target'
 import type {
   AuditOverview,
@@ -24,14 +23,15 @@ import type {
   InviteRunStatus,
   InviteSummary,
   SlackChannel,
-  MultiInviteBatchResult,
   BroadcastBatchResult,
   AudienceSelectionResult,
   DirectMessageBatchResult,
   DirectMessageProgress,
   SlackMessageActivity,
   BroadcastTask,
-  BroadcastProgress
+  BroadcastProgress,
+  OperationTaskDetail,
+  OperationTaskRecord
 } from '../core/types'
 
 let authService: AuthService
@@ -41,6 +41,9 @@ let activeInviteCancelled = false
 let activeBroadcastCancelled = false
 let activeDirectMessageCancelled = false
 let broadcastManager: BroadcastManager | null = null
+let activeInviteTaskId: string | null = null
+let activeBroadcastTaskId: string | null = null
+let activeDirectMessageTaskId: string | null = null
 
 function getDataDir(): string {
   return join(app.getPath('userData'), 'data')
@@ -87,113 +90,72 @@ async function createSlackClient(): Promise<SlackClient> {
   return new SlackClient(creds)
 }
 
+async function createJobManager(): Promise<JobManager> {
+  const database = await getDatabase()
+  const client = await createSlackClient()
+  return new JobManager(database, client)
+}
+
 function getUserLabel(user: ClassifiedUser): string {
   return user.displayName || user.realName || user.name || user.id
 }
 
-function buildInviteSummary(
+function buildInviteSummaryFromTask(
   userIds: string[],
   channelIds: string[],
   preview: InvitePreviewResult,
-  result?: MultiInviteBatchResult
+  task: OperationTaskDetail
 ): InviteSummary {
+  const alreadyInChannelCount = task.items.filter(
+    (item) => item.result?.reason === 'already_in_channel'
+  ).length
+
   return {
     requestedUsers: userIds.length,
     requestedChannels: channelIds.length,
     totalRequested: preview.totalRequested,
-    totalSucceeded: result ? result.totalSucceeded : preview.totalInvitable,
-    totalFailed: result ? result.totalFailed : 0,
-    totalAlreadyInChannel: result ? result.totalAlreadyInChannel : preview.totalAlreadyInChannel
+    totalSucceeded: task.mode === 'dry-run' ? preview.totalInvitable : task.summary.successCount,
+    totalFailed: task.mode === 'dry-run' ? 0 : task.summary.failedCount,
+    totalAlreadyInChannel: alreadyInChannelCount
   }
 }
 
-function buildPreviewLogs(
-  preview: InvitePreviewResult,
-  userNameById: Map<string, string>
-): InviteLogEntry[] {
-  const timestamp = new Date().toISOString()
-  const logs: InviteLogEntry[] = []
-
-  for (const channelResult of preview.channelResults) {
-    for (const userId of channelResult.invitableUserIds) {
-      logs.push({
-        timestamp,
-        channelId: channelResult.channelId,
-        channelName: channelResult.channelName,
-        userId,
-        userName: userNameById.get(userId) ?? null,
-        status: 'planned'
-      })
-    }
-
-    for (const userId of channelResult.alreadyInChannelUserIds) {
-      logs.push({
-        timestamp,
-        channelId: channelResult.channelId,
-        channelName: channelResult.channelName,
-        userId,
-        userName: userNameById.get(userId) ?? null,
-        status: 'already_in_channel'
-      })
-    }
-  }
-
-  return logs
-}
-
-function buildExecutionLogs(
-  result: MultiInviteBatchResult,
+function buildInviteLogsFromTask(
+  task: OperationTaskDetail,
   channelNameById: Map<string, string>,
   userNameById: Map<string, string>
 ): InviteLogEntry[] {
-  const timestamp = new Date().toISOString()
-  const logs: InviteLogEntry[] = []
+  return task.items.map((item) => {
+    const payload = item.payload ?? {}
+    const channelId =
+      typeof payload.channelId === 'string' ? payload.channelId : 'unknown-channel'
+    const userId = typeof payload.userId === 'string' ? payload.userId : item.targetId
+    const reason = typeof item.result?.reason === 'string' ? item.result.reason : null
+    let status: InviteLogEntry['status'] = 'planned'
 
-  for (const channelResult of result.channelResults) {
-    const channelName = channelNameById.get(channelResult.channelId) ?? null
-    for (const detail of channelResult.details) {
-      for (const userId of detail.succeeded) {
-        logs.push({
-          timestamp,
-          channelId: channelResult.channelId,
-          channelName,
-          userId,
-          userName: userNameById.get(userId) ?? null,
-          status: 'success'
-        })
-      }
-
-      for (const userId of detail.alreadyInChannel) {
-        logs.push({
-          timestamp,
-          channelId: channelResult.channelId,
-          channelName,
-          userId,
-          userName: userNameById.get(userId) ?? null,
-          status: 'already_in_channel'
-        })
-      }
-
-      for (const failure of detail.failed) {
-        logs.push({
-          timestamp,
-          channelId: channelResult.channelId,
-          channelName,
-          userId: failure.userId,
-          userName: userNameById.get(failure.userId) ?? null,
-          status: 'failed',
-          error: failure.error
-        })
-      }
+    if (item.status === 'success') {
+      status = 'success'
+    } else if (item.status === 'failed') {
+      status = 'failed'
+    } else if (reason === 'already_in_channel') {
+      status = 'already_in_channel'
     }
-  }
 
-  return logs
+    return {
+      timestamp: item.updatedAt,
+      channelId,
+      channelName: channelNameById.get(channelId) ?? null,
+      userId,
+      userName: userNameById.get(userId) ?? null,
+      status,
+      error: item.error ?? undefined
+    }
+  })
 }
 
-function deriveInviteStatus(result: MultiInviteBatchResult): InviteRunStatus {
-  if (result.cancelled) return 'cancelled'
-  if (result.totalSucceeded === 0 && result.totalFailed > 0) return 'failed'
+function deriveInviteStatusFromTask(task: OperationTaskDetail): InviteRunStatus {
+  if (task.status === 'canceled') return 'cancelled'
+  if (task.summary.successCount === 0 && task.summary.failedCount > 0) return 'failed'
   return 'completed'
 }
 
@@ -222,6 +184,50 @@ function createInviteRunRecord(params: {
     logs: params.logs,
     createdAt: now,
     updatedAt: now
+  }
+}
+
+function buildDirectMessageBatchResult(task: OperationTaskDetail): DirectMessageBatchResult {
+  return {
+    totalRequested: task.summary.totalItems,
+    totalSucceeded: task.summary.successCount,
+    totalFailed: task.summary.failedCount,
+    cancelled: task.status === 'canceled',
+    results: task.items.map((item) => ({
+      userId: typeof item.payload.userId === 'string' ? item.payload.userId : item.targetId,
+      channelId: typeof item.result?.channelId === 'string' ? item.result.channelId : null,
+      success: item.status === 'success',
+      error: item.error ?? undefined
+    }))
+  }
+}
+
+function buildBroadcastBatchResult(task: OperationTaskDetail): BroadcastBatchResult {
+  const channelIds = Array.from(
+    new Set(
+      task.items
+        .map((item) => item.payload.channelId)
+        .filter((channelId): channelId is string => typeof channelId === 'string')
+    )
+  )
+
+  return {
+    channelIds,
+    totalRequested: task.summary.totalItems,
+    totalSucceeded: task.summary.successCount,
+    totalFailed: task.summary.failedCount,
+    cancelled: task.status === 'canceled',
+    channelResults: channelIds.map((channelId) => {
+      const channelItems = task.items.filter((item) => item.payload.channelId === channelId)
+      return {
+        channelId,
+        success: channelItems.every((item) => item.status !== 'failed'),
+        sentCount: channelItems.filter((item) => item.status === 'success').length,
+        errors: channelItems
+          .map((item) => item.error)
+          .filter((error): error is string => Boolean(error))
+      }
+    })
   }
 }
 
@@ -453,38 +459,51 @@ export function registerIpcHandlers(): void {
       }
 
       activeInviteCancelled = false
-      const client = await createSlackClient()
       const database = await getDatabase()
+      const client = await createSlackClient()
       const inviteService = new InviteService(client)
+      const jobManager = new JobManager(database, client)
       const users = database.getUsers()
       const channels = database.getChannels()
       const channelNameById = new Map(channels.map((channel) => [channel.id, channel.name]))
       const userNameById = new Map(users.map((user) => [user.id, getUserLabel(user)]))
       const uniqueUserIds = Array.from(new Set(userIds))
       const preview = await inviteService.previewForChannels(channelIds, uniqueUserIds, channelNameById)
-      const result = await inviteService.inviteToChannels(
+      const task = jobManager.createInviteTask({
         channelIds,
-        uniqueUserIds,
-        (done, total, channelId) => {
-          event.sender.send('invite:progress', { done, total, channelId })
-        },
-        () => activeInviteCancelled
-      )
-
-      const record = createInviteRunRecord({
-        mode: 'execute',
-        status: deriveInviteStatus(result),
-        csvFileName,
-        channelIds: [...channelIds],
-        channelNames: channelIds.map((channelId) => channelNameById.get(channelId) ?? channelId),
+        channelNameById,
         userIds: uniqueUserIds,
-        preview,
-        summary: buildInviteSummary(uniqueUserIds, channelIds, preview, result),
-        logs: buildExecutionLogs(result, channelNameById, userNameById)
+        userNameById,
+        mode: 'execute',
+        csvFileName,
+        preview
       })
+      activeInviteTaskId = task.id
+      try {
+        const executedTask = await jobManager.runInviteTask(task.id, {
+          onProgress: (progress) => {
+            event.sender.send('invite:progress', progress)
+          },
+          shouldCancel: () => activeInviteCancelled
+        })
 
-      database.insertInviteRun(record)
-      return record
+        const record = createInviteRunRecord({
+          mode: 'execute',
+          status: deriveInviteStatusFromTask(executedTask),
+          csvFileName,
+          channelIds: [...channelIds],
+          channelNames: channelIds.map((channelId) => channelNameById.get(channelId) ?? channelId),
+          userIds: uniqueUserIds,
+          preview,
+          summary: buildInviteSummaryFromTask(uniqueUserIds, channelIds, preview, executedTask),
+          logs: buildInviteLogsFromTask(executedTask, channelNameById, userNameById)
+        })
+
+        database.insertInviteRun(record)
+        return record
+      } finally {
+        activeInviteTaskId = null
+      }
     }
   )
 
@@ -496,15 +515,25 @@ export function registerIpcHandlers(): void {
       userIds: string[],
       csvFileName?: string | null
     ): Promise<InviteRunRecord> => {
-      const client = await createSlackClient()
       const database = await getDatabase()
+      const client = await createSlackClient()
       const inviteService = new InviteService(client)
+      const jobManager = new JobManager(database, client)
       const users = database.getUsers()
       const channels = database.getChannels()
       const uniqueUserIds = Array.from(new Set(userIds))
       const channelNameById = new Map(channels.map((channel) => [channel.id, channel.name]))
       const userNameById = new Map(users.map((user) => [user.id, getUserLabel(user)]))
       const preview = await inviteService.previewForChannels(channelIds, uniqueUserIds, channelNameById)
+      const task = jobManager.createInviteTask({
+        channelIds,
+        channelNameById,
+        userIds: uniqueUserIds,
+        userNameById,
+        mode: 'dry-run',
+        csvFileName,
+        preview
+      })
 
       const record = createInviteRunRecord({
         mode: 'dry-run',
@@ -514,8 +543,8 @@ export function registerIpcHandlers(): void {
         channelNames: channelIds.map((channelId) => channelNameById.get(channelId) ?? channelId),
         userIds: uniqueUserIds,
         preview,
-        summary: buildInviteSummary(uniqueUserIds, channelIds, preview),
-        logs: buildPreviewLogs(preview, userNameById)
+        summary: buildInviteSummaryFromTask(uniqueUserIds, channelIds, preview, task),
+        logs: buildInviteLogsFromTask(task, channelNameById, userNameById)
       })
 
       database.insertInviteRun(record)
@@ -538,28 +567,39 @@ export function registerIpcHandlers(): void {
       localImagePaths?: string[]
     ): Promise<DirectMessageBatchResult> => {
       activeDirectMessageCancelled = false
+      const database = await getDatabase()
       const client = await createSlackClient()
-      const directMessageService = new DirectMessageService(client)
+      const jobManager = new JobManager(database, client)
+      const users = database.getUsers()
+      const userNameById = new Map(users.map((user) => [user.id, getUserLabel(user)]))
+      const task = jobManager.createDirectMessageTask({
+        userIds,
+        userNameById,
+        message,
+        imageUrls: imageUrls && imageUrls.length > 0 ? imageUrls : null,
+        localFilePaths: localImagePaths && localImagePaths.length > 0 ? localImagePaths : null
+      })
+      activeDirectMessageTaskId = task.id
 
       let lastIpcSend = 0
       const IPC_THROTTLE_MS = 400
 
-      const result = await directMessageService.sendBulk(
-        userIds,
-        message,
-        imageUrls && imageUrls.length > 0 ? imageUrls : null,
-        localImagePaths && localImagePaths.length > 0 ? localImagePaths : null,
-        (progress: DirectMessageProgress) => {
-          const now = Date.now()
-          if (progress.done === progress.total || now - lastIpcSend >= IPC_THROTTLE_MS) {
-            lastIpcSend = now
-            event.sender.send('dm:progress', progress)
-          }
-        },
-        () => activeDirectMessageCancelled
-      )
+      try {
+        const executedTask = await jobManager.runDirectMessageTask(task.id, {
+          onProgress: (progress: DirectMessageProgress) => {
+            const now = Date.now()
+            if (progress.done === progress.total || now - lastIpcSend >= IPC_THROTTLE_MS) {
+              lastIpcSend = now
+              event.sender.send('dm:progress', progress)
+            }
+          },
+          shouldCancel: () => activeDirectMessageCancelled
+        })
 
-      return result
+        return buildDirectMessageBatchResult(executedTask)
+      } finally {
+        activeDirectMessageTaskId = null
+      }
     }
   )
 
@@ -567,6 +607,68 @@ export function registerIpcHandlers(): void {
     activeDirectMessageCancelled = true
     return { success: true }
   })
+
+  ipcMain.handle('jobs:list', async (_event, operationType?: OperationTaskRecord['operationType']) => {
+    const database = await getDatabase()
+    return database.listOperationTasks(50, operationType)
+  })
+
+  ipcMain.handle('jobs:get', async (_event, taskId: string) => {
+    const database = await getDatabase()
+    return database.getOperationTask(taskId)
+  })
+
+  ipcMain.handle(
+    'jobs:resume',
+    async (_event, taskId: string): Promise<OperationTaskDetail> => {
+      const database = await getDatabase()
+      const task = database.getOperationTask(taskId)
+      if (!task) {
+        throw new Error('対象ジョブが見つかりません。')
+      }
+
+      if (task.operationType === 'invite') {
+        activeInviteCancelled = false
+        activeInviteTaskId = taskId
+      } else if (task.operationType === 'direct_message') {
+        activeDirectMessageCancelled = false
+        activeDirectMessageTaskId = taskId
+      } else {
+        activeBroadcastCancelled = false
+        activeBroadcastTaskId = taskId
+      }
+
+      const jobManager = await createJobManager()
+      try {
+        return jobManager.resumeTask(taskId, {
+          onInviteProgress: (progress) => {
+            BrowserWindow.getAllWindows().forEach((win) => {
+              win.webContents.send('invite:progress', progress)
+            })
+          },
+          onDirectMessageProgress: (progress) => {
+            BrowserWindow.getAllWindows().forEach((win) => {
+              win.webContents.send('dm:progress', progress)
+            })
+          },
+          onBroadcastProgress: (progress) => {
+            BrowserWindow.getAllWindows().forEach((win) => {
+              win.webContents.send('broadcast:progress', progress)
+            })
+          },
+          shouldCancel: () => {
+            if (task.operationType === 'invite') return activeInviteCancelled
+            if (task.operationType === 'direct_message') return activeDirectMessageCancelled
+            return activeBroadcastCancelled
+          }
+        })
+      } finally {
+        if (task.operationType === 'invite') activeInviteTaskId = null
+        if (task.operationType === 'direct_message') activeDirectMessageTaskId = null
+        if (task.operationType === 'broadcast') activeBroadcastTaskId = null
+      }
+    }
+  )
 
   // ---- メッセージ送りタスク管理 ----
   ipcMain.handle('broadcast:listTasks', async () => {
@@ -618,30 +720,40 @@ export function registerIpcHandlers(): void {
       localImagePaths?: string[]
     ): Promise<BroadcastBatchResult> => {
       activeBroadcastCancelled = false
+      const database = await getDatabase()
       const client = await createSlackClient()
-      const broadcastService = new BroadcastService(client)
+      const jobManager = new JobManager(database, client)
+      const channels = database.getChannels()
+      const channelNameById = new Map(channels.map((channel) => [channel.id, channel.name]))
+      const task = jobManager.createBroadcastTask({
+        channelIds,
+        channelNameById,
+        message,
+        repeatCount,
+        imageUrls: imageUrls && imageUrls.length > 0 ? imageUrls : null,
+        localFilePaths: localImagePaths && localImagePaths.length > 0 ? localImagePaths : null
+      })
+      activeBroadcastTaskId = task.id
 
       // IPC側でも進捗をスロットリング
       let lastIpcSend = 0
       const IPC_THROTTLE_MS = 400
 
-      const result = await broadcastService.broadcastMessage(
-        channelIds,
-        message,
-        imageUrls && imageUrls.length > 0 ? imageUrls : null,
-        null,
-        localImagePaths && localImagePaths.length > 0 ? localImagePaths : null,
-        repeatCount,
-        (progress: BroadcastProgress) => {
-          const now = Date.now()
-          if (progress.done === progress.total || now - lastIpcSend >= IPC_THROTTLE_MS) {
-            lastIpcSend = now
-            event.sender.send('broadcast:progress', progress)
-          }
-        },
-        () => activeBroadcastCancelled
-      )
-      return result
+      try {
+        const executedTask = await jobManager.runBroadcastTask(task.id, {
+          onProgress: (progress: BroadcastProgress) => {
+            const now = Date.now()
+            if (progress.done === progress.total || now - lastIpcSend >= IPC_THROTTLE_MS) {
+              lastIpcSend = now
+              event.sender.send('broadcast:progress', progress)
+            }
+          },
+          shouldCancel: () => activeBroadcastCancelled
+        })
+        return buildBroadcastBatchResult(executedTask)
+      } finally {
+        activeBroadcastTaskId = null
+      }
     }
   )
 

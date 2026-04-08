@@ -40,11 +40,11 @@ export function DirectMessageConfirm({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onCancel} />
 
-      <div className="relative w-full max-w-3xl rounded-lg bg-background border border-border p-6 shadow-lg">
+      <div className="relative w-full max-w-3xl rounded-2xl border border-border bg-card p-6 shadow-[0_32px_90px_-40px_rgba(0,0,0,0.9)]">
         <h2 className="text-lg font-semibold">個別DMの最終確認</h2>
 
         <div className="mt-4 space-y-4">
-          <div className="rounded-md bg-muted p-4">
+          <div className="rounded-xl bg-muted/60 p-4">
             <p className="text-sm">
               <span className="font-medium">{selectedUsers.length} 人</span> に個別DMを送信します。
             </p>
@@ -54,7 +54,7 @@ export function DirectMessageConfirm({
           </div>
 
           {riskyUsers.length > 0 && (
-            <div className="rounded-md border border-amber-500/30 bg-amber-50 p-4 text-sm text-amber-900">
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
               <p className="font-semibold">要確認のユーザーが {riskyUsers.length} 人います。</p>
               <p className="mt-1 text-xs">
                 カテゴリ未分類のユーザーが含まれています。先生や対象外が混ざっていないか確認してください。
@@ -66,7 +66,7 @@ export function DirectMessageConfirm({
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               送信対象一覧
             </p>
-            <div className="max-h-80 overflow-auto rounded-md border border-border">
+            <div className="max-h-80 overflow-auto rounded-xl border border-border bg-background/92">
               {selectedUsers.map((user) => {
                 const isRisky = !user.categoryId
                 const categoryLabel = user.categoryId
@@ -77,7 +77,7 @@ export function DirectMessageConfirm({
                   <div
                     key={user.id}
                     className={`flex items-center gap-3 border-b border-border/60 px-3 py-2 last:border-b-0 ${
-                      isRisky ? 'bg-amber-50/70' : 'bg-background'
+                      isRisky ? 'bg-amber-500/10' : 'bg-background/70'
                     }`}
                   >
                     {user.avatarUrl && (
@@ -94,7 +94,7 @@ export function DirectMessageConfirm({
                       </div>
                     </div>
                     {isRisky && (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                      <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-200">
                         要確認
                       </span>
                     )}
@@ -127,7 +127,7 @@ export function DirectMessageConfirm({
           <button
             onClick={onConfirm}
             disabled={!canConfirm}
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-40"
+            className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-[#f6121d] disabled:opacity-40"
           >
             この内容で送信
           </button>

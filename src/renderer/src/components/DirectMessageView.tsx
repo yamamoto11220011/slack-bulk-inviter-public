@@ -120,8 +120,8 @@ export function DirectMessageView() {
   }
 
   return (
-    <div className="flex flex-1 overflow-hidden">
-      <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-muted/10 overflow-auto">
+    <div className="flex flex-1 gap-4 overflow-hidden p-4">
+      <aside className="flex w-64 shrink-0 flex-col overflow-auto rounded-[1.6rem] border border-border/70 bg-card/82 shadow-[0_28px_80px_-48px_rgba(15,23,42,0.45)] backdrop-blur-xl">
         <DirectMessageCategoryFilter
           categories={categories}
           userStats={eligibleUserStats}
@@ -131,12 +131,12 @@ export function DirectMessageView() {
           onSelectUsers={handleSelectUsers}
           onDeselectUsers={handleDeselectUsers}
         />
-        <div className="mt-auto border-t border-border bg-background p-2">
+        <div className="mt-auto border-t border-border/70 bg-background/55 p-3">
           <SyncStatus />
         </div>
       </aside>
 
-      <main className="flex-1 overflow-auto bg-background">
+      <main className="min-w-0 flex-1 overflow-auto rounded-[1.8rem] border border-border/70 bg-card/84 shadow-[0_28px_80px_-48px_rgba(15,23,42,0.45)] backdrop-blur-xl">
         <div className="mx-auto flex h-full max-w-7xl flex-col gap-6 p-6">
           <div className="mx-auto w-full max-w-4xl">
             <DirectMessagePanel
@@ -155,7 +155,7 @@ export function DirectMessageView() {
             />
           </div>
 
-          <div className="flex-1 min-h-[26rem] overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm">
+          <div className="flex-1 min-h-[26rem] overflow-hidden rounded-[1.5rem] border border-border/70 bg-background/70 shadow-[0_24px_70px_-48px_rgba(15,23,42,0.5)]">
             <DirectMessageUserTable
               users={eligibleUsers}
               categories={categories}

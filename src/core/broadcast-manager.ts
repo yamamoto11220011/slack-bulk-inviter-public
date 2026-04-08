@@ -1,6 +1,6 @@
 import { AppDatabase } from './database'
 import { SlackClient } from './slack-client'
-import { BroadcastService } from './broadcast'
+import { JobManager } from './job-manager'
 import { BroadcastTask, BroadcastTaskStatus, BroadcastProgress } from './types'
 
 export class BroadcastManager {
@@ -157,6 +157,11 @@ export class BroadcastManager {
     this.db.updateBroadcastTaskStatus(task.id, 'running')
 
     try {
+      const jobManager = new JobManager(this.db, this.client)
+      const channelNameById = new Map(
+        this.db.getChannels().map((channel) => [channel.id, channel.name])
+      )
+
       // 1. レガシー項目を正規化
       let imageUrls = [...(task.imageUrls || [])]
       const fileIds = [...(task.fileIds || [])]
@@ -178,24 +183,39 @@ export class BroadcastManager {
         currentMessage = task.messages[idx % task.messages.length]
       }
 
-      // 3. ブロードキャスト開始
-      const service = new BroadcastService(this.client)
-      const result = await service.broadcastMessage(
-        task.channelIds,
-        currentMessage,
-        imageUrls.length > 0 ? imageUrls : null,
-        fileIds.length > 0 ? fileIds : null,
-        localFilePaths.length > 0 ? localFilePaths : null,
-        task.repeatCount,
-        (p) => {
+      // 3. 共通ジョブ基盤でブロードキャスト開始
+      const operationTask = jobManager.createBroadcastTask({
+        channelIds: task.channelIds,
+        channelNameById,
+        message: currentMessage,
+        repeatCount: task.repeatCount,
+        imageUrls: imageUrls.length > 0 ? imageUrls : null,
+        fileIds: fileIds.length > 0 ? fileIds : null,
+        localFilePaths: localFilePaths.length > 0 ? localFilePaths : null,
+        sourceTaskId: task.id,
+        title: task.name
+      })
+      const resultTask = await jobManager.runBroadcastTask(operationTask.id, {
+        onProgress: (p) => {
           this.onProgress({ ...p, taskId: task.id })
         },
-        () => this.cancelledTasks.has(task.id)
-      )
+        shouldCancel: () => this.cancelledTasks.has(task.id)
+      })
 
       // 4. ログを保存
       const timestamp = new Date().toISOString()
-      for (const chRes of result.channelResults) {
+      const channelResults = Array.from(new Set(task.channelIds)).map((channelId) => {
+        const items = resultTask.items.filter((item) => item.payload.channelId === channelId)
+        return {
+          channelId,
+          success: items.every((item) => item.status !== 'failed'),
+          errors: items
+            .map((item) => item.error)
+            .filter((error): error is string => Boolean(error))
+        }
+      })
+
+      for (const chRes of channelResults) {
         this.db.addBroadcastLog(task.id, {
           timestamp,
           channelId: chRes.channelId,
@@ -207,19 +227,19 @@ export class BroadcastManager {
       }
 
       // 5. メッセージインデックスを進める
-      if (task.messages && task.messages.length > 0 && !result.cancelled) {
+      if (task.messages && task.messages.length > 0 && resultTask.status !== 'canceled') {
         task.nextMessageIndex = ((task.nextMessageIndex || 0) + 1) % task.messages.length
         this.db.upsertBroadcastTask(task)
       }
 
-      let nextStatus: BroadcastTaskStatus = result.cancelled ? 'cancelled' : 'completed'
-      if (!result.cancelled && result.totalFailed === result.totalRequested) {
+      let nextStatus: BroadcastTaskStatus = resultTask.status === 'canceled' ? 'cancelled' : 'completed'
+      if (resultTask.summary.successCount === 0 && resultTask.summary.failedCount === resultTask.summary.totalItems) {
         nextStatus = 'failed'
       }
 
       // 繰り返し系なら完了させず 'pending' (待機中) に戻す
       const schedule = task.schedule || { type: 'immediate' }
-      if (!result.cancelled) {
+      if (resultTask.status !== 'canceled') {
         if (schedule.type === 'interval' || schedule.type === 'daily' || schedule.repeatUntilStopped) {
           nextStatus = 'pending'
         }

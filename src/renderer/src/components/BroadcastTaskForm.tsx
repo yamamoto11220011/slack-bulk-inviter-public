@@ -1,8 +1,25 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
-import { Image as ImageIcon, ImagePlus, Paperclip } from 'lucide-react'
+import {
+  CalendarClock,
+  Hash,
+  Image as ImageIcon,
+  ImagePlus,
+  LockKeyhole,
+  Paperclip,
+  PlayCircle,
+  RefreshCw,
+  Repeat,
+  TimerReset
+} from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { BroadcastTask, ScheduleConfig } from '../../../core/types'
 import { useAppStore } from '../stores/app-store'
+import {
+  ALL_SCHEDULE_DAYS,
+  DAY_LABELS,
+  describeDays,
+  describeSchedule
+} from '../lib/broadcast-schedule'
 
 interface Props {
   task?: Partial<BroadcastTask>
@@ -35,8 +52,44 @@ type BroadcastTaskDraft = {
 type DraftMap = Record<ScheduleTab, BroadcastTaskDraft>
 
 const STORAGE_KEY = 'broadcast-task-form-drafts-v1'
-const SCHEDULE_TABS: ScheduleTab[] = ['immediate', 'once', 'daily', 'interval']
-const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6]
+
+const SCHEDULE_OPTIONS: Array<{
+  type: ScheduleTab
+  title: string
+  description: string
+  Icon: typeof PlayCircle
+}> = [
+  {
+    type: 'immediate',
+    title: '手動で実行',
+    description: '保存だけして、実行はあとでタスク一覧から行います。',
+    Icon: PlayCircle
+  },
+  {
+    type: 'once',
+    title: '日時を指定',
+    description: 'Slack の予約送信のように、指定した日時に1回だけ送ります。',
+    Icon: CalendarClock
+  },
+  {
+    type: 'daily',
+    title: '毎日・曜日指定',
+    description: '毎朝や平日だけなど、決まった曜日と時刻で送ります。',
+    Icon: Repeat
+  },
+  {
+    type: 'interval',
+    title: '一定間隔で送る',
+    description: '30分ごと、2時間ごとなど、期間中ずっと繰り返します。',
+    Icon: TimerReset
+  }
+]
+
+const DAY_PRESETS = [
+  { id: 'everyday', label: '毎日', days: [...ALL_SCHEDULE_DAYS] },
+  { id: 'weekday', label: '平日', days: [1, 2, 3, 4, 5] },
+  { id: 'weekend', label: '土日', days: [0, 6] }
+] as const
 
 function formatDateInput(date: Date): string {
   const year = date.getFullYear()
@@ -65,7 +118,7 @@ function createDefaultDraft(): BroadcastTaskDraft {
     scheduledAt: formatDateTimeLocalInput(now),
     startDate: formatDateInput(now),
     repeatUntilStopped: false,
-    daysOfWeek: [...ALL_DAYS],
+    daysOfWeek: [...ALL_SCHEDULE_DAYS],
     timeOfDay: '09:00',
     intervalValue: 30,
     intervalUnit: 'minutes',
@@ -85,6 +138,52 @@ function createDefaultDrafts(): DraftMap {
   }
 }
 
+function sameDays(left: number[], right: readonly number[]): boolean {
+  if (left.length !== right.length) return false
+  return [...left].sort((a, b) => a - b).every((day, index) => day === [...right].sort((a, b) => a - b)[index])
+}
+
+function buildScheduleFromDraft(
+  scheduleType: ScheduleTab,
+  draft: BroadcastTaskDraft
+): ScheduleConfig {
+  if (scheduleType === 'once') {
+    return {
+      type: 'once',
+      scheduledAt: new Date(draft.scheduledAt).toISOString()
+    }
+  }
+
+  if (scheduleType === 'daily') {
+    return {
+      type: 'daily',
+      startDate: new Date(draft.startDate).toISOString(),
+      endDate: draft.hasEndDate ? new Date(draft.endDate).toISOString() : undefined,
+      repeatUntilStopped: !draft.hasEndDate,
+      daysOfWeek: draft.daysOfWeek.length > 0 ? draft.daysOfWeek : undefined,
+      timeOfDay: draft.timeOfDay
+    }
+  }
+
+  if (scheduleType === 'interval') {
+    return {
+      type: 'interval',
+      startDate: new Date(draft.startDate).toISOString(),
+      endDate: draft.hasEndDate ? new Date(draft.endDate).toISOString() : undefined,
+      repeatUntilStopped: !draft.hasEndDate,
+      daysOfWeek: draft.daysOfWeek.length > 0 ? draft.daysOfWeek : undefined,
+      intervalValue: draft.intervalValue,
+      intervalUnit: draft.intervalUnit,
+      windowStart: draft.windowStart,
+      windowEnd: draft.windowEnd
+    }
+  }
+
+  return {
+    type: 'immediate'
+  }
+}
+
 function normalizeTaskToDraft(task: Partial<BroadcastTask>): BroadcastTaskDraft {
   const schedule = task.schedule || { type: 'immediate' as const }
   const base = createDefaultDraft()
@@ -99,8 +198,8 @@ function normalizeTaskToDraft(task: Partial<BroadcastTask>): BroadcastTaskDraft 
     repeatCount: task.repeatCount || 1,
     scheduledAt: schedule.scheduledAt ? formatDateTimeLocalInput(new Date(schedule.scheduledAt)) : base.scheduledAt,
     startDate: schedule.startDate ? formatDateInput(new Date(schedule.startDate)) : base.startDate,
-    repeatUntilStopped: Boolean(schedule.repeatUntilStopped),
-    daysOfWeek: schedule.daysOfWeek && schedule.daysOfWeek.length > 0 ? schedule.daysOfWeek : [...ALL_DAYS],
+    repeatUntilStopped: schedule.endDate ? false : Boolean(schedule.repeatUntilStopped ?? true),
+    daysOfWeek: schedule.daysOfWeek && schedule.daysOfWeek.length > 0 ? schedule.daysOfWeek : [...ALL_SCHEDULE_DAYS],
     timeOfDay: schedule.timeOfDay || base.timeOfDay,
     intervalValue: schedule.intervalValue || base.intervalValue,
     intervalUnit: schedule.intervalUnit || base.intervalUnit,
@@ -217,6 +316,16 @@ export function BroadcastTaskForm({ task, onSave, onCancel }: Props) {
     return list
   }, [allChannels, deferredSearch])
 
+  const schedulePreview = useMemo(
+    () => describeSchedule(buildScheduleFromDraft(scheduleType, currentDraft)),
+    [currentDraft, scheduleType]
+  )
+
+  const isSaveDisabled =
+    currentDraft.channelIds.length === 0 ||
+    currentDraft.messages.every((message) => !message.trim()) ||
+    !currentDraft.name.trim()
+
   const handleSyncChannels = async () => {
     setIsSyncingChannels(true)
     const cleanup = window.api.onSyncProgress((data) => {
@@ -296,7 +405,7 @@ export function BroadcastTaskForm({ task, onSave, onCancel }: Props) {
     return filteredChannels.slice(0, 100).map((channel) => (
       <label
         key={channel.id}
-        className="flex items-center gap-2 px-3 py-1.5 hover:bg-accent text-sm cursor-pointer transition-colors border-b last:border-0 border-border/50"
+        className="flex cursor-pointer items-center gap-2 border-b border-border/50 px-3 py-2 text-sm transition-colors hover:bg-accent last:border-0"
       >
         <input
           type="checkbox"
@@ -305,7 +414,7 @@ export function BroadcastTaskForm({ task, onSave, onCancel }: Props) {
           className="rounded border-border text-primary focus:ring-0"
         />
         <span className="truncate flex items-center gap-1">
-          {channel.isPrivate ? '🔒' : '#'} {channel.name}
+          {channel.isPrivate ? <LockKeyhole size={13} className="text-muted-foreground" /> : <Hash size={13} className="text-muted-foreground" />} {channel.name}
           {!channel.isMember && (
             <span className="text-[10px] bg-yellow-500/20 text-yellow-600 px-1 rounded ml-1">
               未参加
@@ -317,37 +426,7 @@ export function BroadcastTaskForm({ task, onSave, onCancel }: Props) {
   }, [filteredChannels, selectedChannelIdSet, toggleChannel])
 
   const handleSave = () => {
-    let schedule: ScheduleConfig = {
-      type: scheduleType
-    }
-
-    if (scheduleType === 'once') {
-      schedule = {
-        type: 'once',
-        scheduledAt: new Date(currentDraft.scheduledAt).toISOString()
-      }
-    } else if (scheduleType === 'daily') {
-      schedule = {
-        type: 'daily',
-        startDate: new Date(currentDraft.startDate).toISOString(),
-        endDate: currentDraft.hasEndDate ? new Date(currentDraft.endDate).toISOString() : undefined,
-        repeatUntilStopped: currentDraft.repeatUntilStopped,
-        daysOfWeek: currentDraft.daysOfWeek.length > 0 ? currentDraft.daysOfWeek : undefined,
-        timeOfDay: currentDraft.timeOfDay
-      }
-    } else if (scheduleType === 'interval') {
-      schedule = {
-        type: 'interval',
-        startDate: new Date(currentDraft.startDate).toISOString(),
-        endDate: currentDraft.hasEndDate ? new Date(currentDraft.endDate).toISOString() : undefined,
-        repeatUntilStopped: currentDraft.repeatUntilStopped,
-        daysOfWeek: currentDraft.daysOfWeek.length > 0 ? currentDraft.daysOfWeek : undefined,
-        intervalValue: currentDraft.intervalValue,
-        intervalUnit: currentDraft.intervalUnit,
-        windowStart: currentDraft.windowStart,
-        windowEnd: currentDraft.windowEnd
-      }
-    }
+    const schedule = buildScheduleFromDraft(scheduleType, currentDraft)
 
     const nextStatus = scheduleType === 'immediate' ? 'pending' : 'scheduled'
 
@@ -523,9 +602,10 @@ export function BroadcastTaskForm({ task, onSave, onCancel }: Props) {
           <button
             onClick={handleSyncChannels}
             disabled={isSyncingChannels}
-            className="text-[10px] font-bold text-primary hover:opacity-80 transition-opacity disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-background/75 px-3 py-1.5 text-[10px] font-semibold text-primary transition-all hover:bg-background disabled:opacity-50"
           >
-            {isSyncingChannels ? '同期中...' : '🔄 チャンネル同期'}
+            <RefreshCw size={11} className={isSyncingChannels ? 'animate-spin' : ''} />
+            {isSyncingChannels ? '同期中...' : 'チャンネル同期'}
           </button>
         </div>
         <input
@@ -543,125 +623,241 @@ export function BroadcastTaskForm({ task, onSave, onCancel }: Props) {
         </div>
       </div>
 
-      <div className="p-4 rounded-lg bg-primary/5 border border-primary/10 space-y-4">
-        <div>
-          <label className="text-[10px] font-bold uppercase tracking-wider text-primary mb-2 block">
+      <div className="space-y-4 rounded-2xl border border-primary/10 bg-primary/5 p-4">
+        <div className="space-y-2">
+          <label className="block text-[10px] font-bold uppercase tracking-wider text-primary">
             送信スケジュール
           </label>
-          <div className="flex bg-muted rounded-md p-1">
-            {SCHEDULE_TABS.map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setScheduleType(tab)}
-                className={`flex-1 text-xs py-1.5 rounded-sm font-medium transition-all ${
-                  scheduleType === tab
-                    ? 'bg-background shadow-sm text-primary'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {tab === 'immediate' && '即時実行'}
-                {tab === 'once' && '予約日時'}
-                {tab === 'daily' && '毎日ループ'}
-                {tab === 'interval' && '間隔ループ'}
-              </button>
-            ))}
+          <div className="grid gap-2 md:grid-cols-2">
+            {SCHEDULE_OPTIONS.map(({ type, title, description, Icon }) => {
+              const isActive = scheduleType === type
+              return (
+                <button
+                  key={type}
+                  onClick={() => setScheduleType(type)}
+                  className={`rounded-xl border p-3 text-left transition-all ${
+                    isActive
+                      ? 'border-primary bg-background shadow-sm'
+                      : 'border-border/70 bg-background/70 hover:border-primary/30 hover:bg-background'
+                  }`}
+                >
+                  <div className="mb-2 flex items-center gap-2">
+                    <span
+                      className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+                        isActive ? 'bg-primary text-primary-foreground' : 'bg-primary/10 text-primary'
+                      }`}
+                    >
+                      <Icon size={16} />
+                    </span>
+                    <div>
+                      <div className="text-sm font-semibold text-foreground">{title}</div>
+                      <div className="text-[11px] text-muted-foreground">{description}</div>
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
           </div>
           {!isEditing && (
-            <p className="mt-2 text-[10px] text-muted-foreground">
-              4つのタブはそれぞれ独立した下書きとして自動保存されます。
+            <p className="text-[10px] text-muted-foreground">
+              各モードの内容は独立して保存されます。Buffer や Mailchimp のように、まず実行方法を選んでから詳細を詰める形です。
             </p>
           )}
         </div>
 
+        <div className="rounded-xl border border-primary/15 bg-background p-4">
+          <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-primary/70">
+            この設定でどう動くか
+          </div>
+          <div className="text-sm font-semibold text-foreground">{schedulePreview.title}</div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-bold text-primary">
+              {schedulePreview.shortLabel}
+            </span>
+            {schedulePreview.details.map((detail) => (
+              <span
+                key={detail}
+                className="rounded-full bg-muted px-2.5 py-1 text-[10px] text-muted-foreground"
+              >
+                {detail}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {scheduleType === 'immediate' && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 animate-in fade-in">
+            このモードは「保存した瞬間に送る」ではありません。保存後にタスク一覧へ出るので、そこから必要なタイミングで実行します。
+          </div>
+        )}
+
         {scheduleType === 'once' && (
-          <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2">
-            <label className="text-[10px] uppercase font-bold text-muted-foreground">
-              実行日時
-            </label>
+          <div className="space-y-2 rounded-xl border border-border/60 bg-background p-4 animate-in fade-in slide-in-from-top-2">
+            <div>
+              <div className="text-xs font-semibold text-foreground">送る日時</div>
+              <div className="text-[11px] text-muted-foreground">
+                Slack の「あとで送信」に近い、1回だけの予約です。
+              </div>
+            </div>
             <input
               type="datetime-local"
               value={currentDraft.scheduledAt}
               onChange={(event) => updateCurrentDraft({ scheduledAt: event.target.value })}
-              className="w-full rounded-md border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary"
+              className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
         )}
 
         {(scheduleType === 'daily' || scheduleType === 'interval') && (
           <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
-            {scheduleType === 'daily' ? (
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase font-bold text-muted-foreground">
-                  送信時刻 (HH:mm)
-                </label>
-                <input
-                  type="time"
-                  value={currentDraft.timeOfDay}
-                  onChange={(event) => updateCurrentDraft({ timeOfDay: event.target.value })}
-                  className="w-full rounded-md border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary"
-                />
+            <div className="rounded-xl border border-border/60 bg-background p-4 space-y-3">
+              <div>
+                <div className="text-xs font-semibold text-foreground">
+                  {scheduleType === 'daily' ? 'いつ送るか' : 'どのくらいの間隔で送るか'}
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {scheduleType === 'daily'
+                    ? '毎日または指定曜日の同じ時刻に送ります。'
+                    : '一定間隔で繰り返しつつ、送ってよい時間帯も制限できます。'}
+                </div>
               </div>
-            ) : (
-              <div className="space-y-3">
+
+              {scheduleType === 'daily' ? (
                 <div className="space-y-1.5">
                   <label className="text-[10px] uppercase font-bold text-muted-foreground">
-                    定期間隔
+                    送信時刻
                   </label>
-                  <div className="flex gap-2 border rounded-md p-1 bg-background">
-                    <input
-                      type="number"
-                      min={1}
-                      value={currentDraft.intervalValue}
-                      onChange={(event) =>
-                        updateCurrentDraft({
-                          intervalValue: Math.max(1, Number(event.target.value) || 1)
-                        })
-                      }
-                      className="w-full rounded bg-transparent px-2 text-sm outline-none font-medium"
-                    />
-                    <select
-                      value={currentDraft.intervalUnit}
-                      onChange={(event) =>
-                        updateCurrentDraft({
-                          intervalUnit: event.target.value as 'minutes' | 'hours'
-                        })
-                      }
-                      className="bg-transparent text-sm font-medium outline-none text-muted-foreground border-l pl-2"
-                    >
-                      <option value="minutes">分間隔</option>
-                      <option value="hours">時間間隔</option>
-                    </select>
+                  <input
+                    type="time"
+                    value={currentDraft.timeOfDay}
+                    onChange={(event) => updateCurrentDraft({ timeOfDay: event.target.value })}
+                    className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-[1.2fr_1fr]">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] uppercase font-bold text-muted-foreground">
+                      定期間隔
+                    </label>
+                    <div className="flex gap-2 rounded-xl border bg-background p-1">
+                      <input
+                        type="number"
+                        min={1}
+                        value={currentDraft.intervalValue}
+                        onChange={(event) =>
+                          updateCurrentDraft({
+                            intervalValue: Math.max(1, Number(event.target.value) || 1)
+                          })
+                        }
+                        className="w-full rounded-lg bg-transparent px-2 text-sm font-medium outline-none"
+                      />
+                      <select
+                        value={currentDraft.intervalUnit}
+                        onChange={(event) =>
+                          updateCurrentDraft({
+                            intervalUnit: event.target.value as 'minutes' | 'hours'
+                          })
+                        }
+                        className="rounded-lg border-l bg-transparent px-2 text-sm font-medium text-muted-foreground outline-none"
+                      >
+                        <option value="minutes">分ごと</option>
+                        <option value="hours">時間ごと</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] uppercase font-bold text-muted-foreground">
+                        開始時刻
+                      </label>
+                      <input
+                        type="time"
+                        value={currentDraft.windowStart}
+                        onChange={(event) => updateCurrentDraft({ windowStart: event.target.value })}
+                        className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] uppercase font-bold text-muted-foreground">
+                        終了時刻
+                      </label>
+                      <input
+                        type="time"
+                        value={currentDraft.windowEnd}
+                        onChange={(event) => updateCurrentDraft({ windowEnd: event.target.value })}
+                        className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
                   </div>
                 </div>
+              )}
+            </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold text-muted-foreground">
-                      実行許可(開始)
-                    </label>
-                    <input
-                      type="time"
-                      value={currentDraft.windowStart}
-                      onChange={(event) => updateCurrentDraft({ windowStart: event.target.value })}
-                      className="w-full rounded-md border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold text-muted-foreground">
-                      実行許可(終了)
-                    </label>
-                    <input
-                      type="time"
-                      value={currentDraft.windowEnd}
-                      onChange={(event) => updateCurrentDraft({ windowEnd: event.target.value })}
-                      className="w-full rounded-md border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
+            <div className="rounded-xl border border-border/60 bg-background p-4 space-y-3">
+              <div>
+                <div className="text-xs font-semibold text-foreground">動かす曜日</div>
+                <div className="text-[11px] text-muted-foreground">
+                  毎日・平日・土日のプリセットを選んでから微調整できます。
                 </div>
               </div>
-            )}
 
-            <div className="pt-2 border-t border-primary/10 space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {DAY_PRESETS.map((preset) => {
+                  const active = sameDays(currentDraft.daysOfWeek, preset.days)
+                  return (
+                    <button
+                      key={preset.id}
+                      onClick={() => updateCurrentDraft({ daysOfWeek: [...preset.days] })}
+                      className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition-all ${
+                        active
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="grid grid-cols-7 gap-1.5">
+                {DAY_LABELS.map((day, index) => (
+                  <button
+                    key={day}
+                    onClick={() =>
+                      updateCurrentDraft((draft) => ({
+                        ...draft,
+                        daysOfWeek: draft.daysOfWeek.includes(index)
+                          ? draft.daysOfWeek.filter((item) => item !== index)
+                          : [...draft.daysOfWeek, index]
+                      }))
+                    }
+                    className={`h-9 rounded-lg text-[11px] font-bold transition-all ${
+                      currentDraft.daysOfWeek.includes(index)
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                    }`}
+                  >
+                    {day}
+                  </button>
+                ))}
+              </div>
+
+              <div className="rounded-lg bg-muted/60 px-3 py-2 text-[11px] text-muted-foreground">
+                現在の設定: <span className="font-semibold text-foreground">{describeDays(currentDraft.daysOfWeek)}</span>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border/60 bg-background p-4 space-y-3">
+              <div>
+                <div className="text-xs font-semibold text-foreground">いつから・いつまで動かすか</div>
+                <div className="text-[11px] text-muted-foreground">
+                  Mailchimp のキャンペーン設定のように、開始日と終了条件を分けて決めます。
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-[10px] uppercase font-bold text-muted-foreground">
                   開始日
@@ -670,71 +866,51 @@ export function BroadcastTaskForm({ task, onSave, onCancel }: Props) {
                   type="date"
                   value={currentDraft.startDate}
                   onChange={(event) => updateCurrentDraft({ startDate: event.target.value })}
-                  className="w-full rounded-md border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase font-bold text-muted-foreground">
-                  実行曜日
-                </label>
-                <div className="flex justify-between gap-1">
-                  {['日', '月', '火', '水', '木', '金', '土'].map((day, index) => (
-                    <button
-                      key={index}
-                      onClick={() =>
-                        updateCurrentDraft((draft) => ({
-                          ...draft,
-                          daysOfWeek: draft.daysOfWeek.includes(index)
-                            ? draft.daysOfWeek.filter((item) => item !== index)
-                            : [...draft.daysOfWeek, index]
-                        }))
-                      }
-                      className={`flex-1 h-8 rounded text-[10px] font-bold transition-all ${
-                        currentDraft.daysOfWeek.includes(index)
-                          ? 'bg-primary text-white shadow-sm'
-                          : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                      }`}
-                    >
-                      {day}
-                    </button>
-                  ))}
-                </div>
+              <div className="grid gap-2 md:grid-cols-2">
+                <button
+                  onClick={() => updateCurrentDraft({ hasEndDate: false, repeatUntilStopped: true })}
+                  className={`rounded-xl border p-3 text-left transition-all ${
+                    !currentDraft.hasEndDate
+                      ? 'border-primary bg-primary/5'
+                      : 'border-border/70 hover:border-primary/30'
+                  }`}
+                >
+                  <div className="text-sm font-semibold text-foreground">停止するまで続ける</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    終了日を決めずに、手動で止めるまで継続します。
+                  </div>
+                </button>
+                <button
+                  onClick={() => updateCurrentDraft({ hasEndDate: true, repeatUntilStopped: false })}
+                  className={`rounded-xl border p-3 text-left transition-all ${
+                    currentDraft.hasEndDate
+                      ? 'border-primary bg-primary/5'
+                      : 'border-border/70 hover:border-primary/30'
+                  }`}
+                >
+                  <div className="text-sm font-semibold text-foreground">終了日を指定する</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    指定した日まで運用したいお知らせに向いています。
+                  </div>
+                </button>
               </div>
 
-              <div className="flex flex-col gap-2 pt-1">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={currentDraft.repeatUntilStopped}
-                    onChange={(event) =>
-                      updateCurrentDraft({ repeatUntilStopped: event.target.checked })
-                    }
-                    className="rounded text-primary focus:ring-0 border-primary/50"
-                  />
-                  <span className="text-xs font-bold text-muted-foreground italic">
-                    無限ループ (手動停止まで繰り返す)
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={currentDraft.hasEndDate}
-                    onChange={(event) => updateCurrentDraft({ hasEndDate: event.target.checked })}
-                    className="rounded text-primary focus:ring-0 border-primary/50"
-                  />
-                  <span className="text-xs font-bold text-muted-foreground">
-                    終了日を指定する
-                  </span>
-                </label>
-              </div>
               {currentDraft.hasEndDate && (
-                <input
-                  type="date"
-                  value={currentDraft.endDate}
-                  onChange={(event) => updateCurrentDraft({ endDate: event.target.value })}
-                  className="w-full rounded-md border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary animate-in fade-in"
-                />
+                <div className="space-y-1.5 animate-in fade-in">
+                  <label className="text-[10px] uppercase font-bold text-muted-foreground">
+                    終了日
+                  </label>
+                  <input
+                    type="date"
+                    value={currentDraft.endDate}
+                    onChange={(event) => updateCurrentDraft({ endDate: event.target.value })}
+                    className="w-full rounded-xl border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
               )}
             </div>
           </div>
@@ -744,11 +920,7 @@ export function BroadcastTaskForm({ task, onSave, onCancel }: Props) {
       <div className="flex gap-3 mt-2">
         <button
           onClick={handleSave}
-          disabled={
-            currentDraft.channelIds.length === 0 ||
-            currentDraft.messages.every((message) => !message.trim()) ||
-            !currentDraft.name.trim()
-          }
+          disabled={isSaveDisabled}
           className="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
         >
           {task?.id ? '更新して保存' : 'タスクを作成'}

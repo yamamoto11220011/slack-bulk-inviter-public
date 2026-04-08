@@ -1,6 +1,6 @@
 import { SlackClient } from './slack-client'
 import { renderMessageTemplate } from './message-template'
-import type { BroadcastBatchResult } from './types'
+import type { BroadcastBatchResult, BroadcastExecutionItemResult } from './types'
 
 const DEFAULT_CONCURRENCY = 2
 const ATTACHMENT_CONCURRENCY = 1
@@ -14,6 +14,11 @@ export interface BroadcastProgress {
   success: number
   fail: number
   channelId: string
+}
+
+export interface BroadcastDeliveryPlanItem {
+  channelId: string
+  repeatIndex: number
 }
 
 export class BroadcastService {
@@ -48,15 +53,46 @@ export class BroadcastService {
     localFilePaths: string[] | null = null,
     repeatCount: number = 1,
     onProgress?: (progress: BroadcastProgress) => void,
-    shouldCancel?: () => boolean
+    shouldCancel?: () => boolean,
+    onItemResult?: (result: BroadcastExecutionItemResult) => void
   ): Promise<BroadcastBatchResult> {
-    const totalSends = channelIds.length * repeatCount
+    const plan: BroadcastDeliveryPlanItem[] = []
+    for (let repeatIndex = 0; repeatIndex < repeatCount; repeatIndex += 1) {
+      for (const channelId of channelIds) {
+        plan.push({ channelId, repeatIndex })
+      }
+    }
+
+    return this.executeDeliveryPlan(
+      plan,
+      message,
+      imageUrls,
+      fileIds,
+      localFilePaths,
+      onProgress,
+      shouldCancel,
+      onItemResult
+    )
+  }
+
+  async executeDeliveryPlan(
+    plan: BroadcastDeliveryPlanItem[],
+    message: string,
+    imageUrls: string[] | null = null,
+    fileIds: string[] | null = null,
+    localFilePaths: string[] | null = null,
+    onProgress?: (progress: BroadcastProgress) => void,
+    shouldCancel?: () => boolean,
+    onItemResult?: (result: BroadcastExecutionItemResult) => void
+  ): Promise<BroadcastBatchResult> {
+    const totalSends = plan.length
     const renderedMessage = renderMessageTemplate(message)
     const hasLocalFiles = Boolean(localFilePaths && localFilePaths.length > 0)
     const workerLimit = hasLocalFiles ? ATTACHMENT_CONCURRENCY : DEFAULT_CONCURRENCY
+    const channelIds = Array.from(new Set(plan.map((item) => item.channelId)))
 
     console.log(
-      `[Broadcast] START: ${channelIds.length} ch × ${repeatCount} 回 = ${totalSends} 送信, 並列数=${workerLimit}`
+      `[Broadcast] START: ${totalSends} 件の送信, 並列数=${workerLimit}`
     )
     const globalStartTime = Date.now()
 
@@ -79,7 +115,13 @@ export class BroadcastService {
       const now = Date.now()
       if (now - lastProgressTime >= PROGRESS_INTERVAL_MS || completed === totalSends) {
         lastProgressTime = now
-        onProgress?.({ done: completed, total: totalSends, success: successCount, fail: failCount, channelId })
+        onProgress?.({
+          done: completed,
+          total: totalSends,
+          success: successCount,
+          fail: failCount,
+          channelId
+        })
       }
     }
 
@@ -96,9 +138,9 @@ export class BroadcastService {
           break
         }
 
-        const channelId = channelIds[taskIdx % channelIds.length]
+        const delivery = plan[taskIdx]
         const { ok, error } = await this.sendOne(
-          channelId,
+          delivery.channelId,
           renderedMessage,
           imageUrls,
           fileIds,
@@ -106,22 +148,28 @@ export class BroadcastService {
         )
 
         if (ok) {
-          successCount++
-          channelSent.set(channelId, (channelSent.get(channelId) || 0) + 1)
+          successCount += 1
+          channelSent.set(delivery.channelId, (channelSent.get(delivery.channelId) || 0) + 1)
         } else {
-          failCount++
-          channelFail.set(channelId, (channelFail.get(channelId) || 0) + 1)
-          const currentErrors = channelErrors.get(channelId) || []
+          failCount += 1
+          channelFail.set(delivery.channelId, (channelFail.get(delivery.channelId) || 0) + 1)
+          const currentErrors = channelErrors.get(delivery.channelId) || []
           if (error && !currentErrors.includes(error)) {
             currentErrors.push(error)
-            channelErrors.set(channelId, currentErrors)
+            channelErrors.set(delivery.channelId, currentErrors)
           }
         }
 
-        completed++
-        notifyProgress(channelId)
+        onItemResult?.({
+          channelId: delivery.channelId,
+          repeatIndex: delivery.repeatIndex,
+          status: ok ? 'success' : 'failed',
+          error
+        })
 
-        // 各ワーカーに最低間隔を設け、CPU/ネットワーク負荷を抑える
+        completed += 1
+        notifyProgress(delivery.channelId)
+
         const elapsed = Date.now() - loopStart
         if (elapsed < MIN_SEND_INTERVAL_MS) {
           await new Promise((resolve) => setTimeout(resolve, MIN_SEND_INTERVAL_MS - elapsed))
@@ -133,10 +181,21 @@ export class BroadcastService {
     await Promise.all(Array.from({ length: workerCount }, () => worker()))
 
     const elapsed = ((Date.now() - globalStartTime) / 1000).toFixed(1)
-    const rps = completed > 0 ? (completed / ((Date.now() - globalStartTime) / 1000)).toFixed(0) : '0'
-    console.log(`[Broadcast] DONE: ${completed}/${totalSends} 完了 (成功=${successCount}, 失敗=${failCount}, キャンセル=${cancelled}) ${elapsed}秒 (${rps} req/s)`)
+    const rps =
+      completed > 0 ? (completed / ((Date.now() - globalStartTime) / 1000)).toFixed(0) : '0'
+    console.log(
+      `[Broadcast] DONE: ${completed}/${totalSends} 完了 (成功=${successCount}, 失敗=${failCount}, キャンセル=${cancelled}) ${elapsed}秒 (${rps} req/s)`
+    )
 
-    onProgress?.({ done: completed, total: totalSends, success: successCount, fail: failCount, channelId: channelIds[0] })
+    if (channelIds.length > 0) {
+      onProgress?.({
+        done: completed,
+        total: totalSends,
+        success: successCount,
+        fail: failCount,
+        channelId: channelIds[0]
+      })
+    }
 
     return {
       channelIds,

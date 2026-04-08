@@ -7,7 +7,9 @@ import type {
   DirectMessageBatchResult,
   DirectMessageProgress,
   InvitePreviewResult,
-  InviteRunRecord
+  InviteRunRecord,
+  OperationTaskDetail,
+  OperationTaskRecord
 } from '../core/types'
 
 const api = {
@@ -74,6 +76,11 @@ const api = {
   ): Promise<DirectMessageBatchResult> =>
     ipcRenderer.invoke('dm:execute', userIds, message, imageUrls, localImagePaths),
   cancelDirectMessage: (): Promise<{ success: boolean }> => ipcRenderer.invoke('dm:cancel'),
+  listJobs: (
+    operationType?: OperationTaskRecord['operationType']
+  ): Promise<OperationTaskRecord[]> => ipcRenderer.invoke('jobs:list', operationType),
+  getJob: (taskId: string): Promise<OperationTaskDetail | null> => ipcRenderer.invoke('jobs:get', taskId),
+  resumeJob: (taskId: string): Promise<OperationTaskDetail> => ipcRenderer.invoke('jobs:resume', taskId),
 
   // メッセージ送りタスク管理
   listBroadcastTasks: (): Promise<BroadcastTask[]> => ipcRenderer.invoke('broadcast:listTasks'),

@@ -200,6 +200,165 @@ export interface InviteRunRecord {
   updatedAt: string
 }
 
+export type OperationType = 'invite' | 'broadcast' | 'direct_message'
+export type OperationMode = 'execute' | 'dry-run'
+export type OperationStatus =
+  | 'pending'
+  | 'processing'
+  | 'success'
+  | 'failed'
+  | 'skipped'
+  | 'canceled'
+export type OperationTargetType = 'channel' | 'user' | 'campaign' | 'run'
+
+export interface OperationSummary {
+  totalItems: number
+  pendingCount: number
+  processingCount: number
+  successCount: number
+  failedCount: number
+  skippedCount: number
+  canceledCount: number
+}
+
+export interface OperationTaskRecord {
+  id: string
+  operationType: OperationType
+  mode: OperationMode
+  title: string
+  status: OperationStatus
+  idempotencyKey: string
+  payloadHash: string
+  metadata: Record<string, unknown> | null
+  totalJobs: number
+  summary: OperationSummary
+  createdAt: string
+  updatedAt: string
+  startedAt: string | null
+  completedAt: string | null
+}
+
+export interface OperationJobRecord {
+  id: string
+  taskId: string
+  operationType: OperationType
+  title: string
+  status: OperationStatus
+  targetType: OperationTargetType
+  targetId: string
+  targetLabel: string | null
+  idempotencyKey: string
+  payloadHash: string
+  metadata: Record<string, unknown> | null
+  summary: OperationSummary
+  createdAt: string
+  updatedAt: string
+  startedAt: string | null
+  completedAt: string | null
+}
+
+export interface OperationJobItemRecord {
+  id: string
+  taskId: string
+  jobId: string
+  operationType: OperationType
+  status: OperationStatus
+  targetId: string
+  targetLabel: string | null
+  idempotencyKey: string
+  payloadHash: string
+  payload: Record<string, unknown>
+  result: Record<string, unknown> | null
+  error: string | null
+  attemptCount: number
+  createdAt: string
+  updatedAt: string
+  startedAt: string | null
+  completedAt: string | null
+}
+
+export interface OperationTaskDetail extends OperationTaskRecord {
+  jobs: OperationJobRecord[]
+  items: OperationJobItemRecord[]
+}
+
+export interface OperationTaskInput {
+  id: string
+  operationType: OperationType
+  mode: OperationMode
+  title: string
+  status: OperationStatus
+  idempotencyKey: string
+  payloadHash: string
+  metadata?: Record<string, unknown> | null
+  totalJobs: number
+  summary: OperationSummary
+  createdAt: string
+  updatedAt: string
+  startedAt?: string | null
+  completedAt?: string | null
+}
+
+export interface OperationJobInput {
+  id: string
+  taskId: string
+  operationType: OperationType
+  title: string
+  status: OperationStatus
+  targetType: OperationTargetType
+  targetId: string
+  targetLabel?: string | null
+  idempotencyKey: string
+  payloadHash: string
+  metadata?: Record<string, unknown> | null
+  summary: OperationSummary
+  createdAt: string
+  updatedAt: string
+  startedAt?: string | null
+  completedAt?: string | null
+}
+
+export interface OperationJobItemInput {
+  id: string
+  taskId: string
+  jobId: string
+  operationType: OperationType
+  status: OperationStatus
+  targetId: string
+  targetLabel?: string | null
+  idempotencyKey: string
+  payloadHash: string
+  payload: Record<string, unknown>
+  result?: Record<string, unknown> | null
+  error?: string | null
+  attemptCount?: number
+  createdAt: string
+  updatedAt: string
+  startedAt?: string | null
+  completedAt?: string | null
+}
+
+export interface InviteExecutionItemResult {
+  channelId: string
+  userId: string
+  status: 'success' | 'failed' | 'already_in_channel'
+  error?: string
+}
+
+export interface DirectMessageExecutionItemResult {
+  userId: string
+  channelId: string | null
+  status: 'success' | 'failed'
+  error?: string
+}
+
+export interface BroadcastExecutionItemResult {
+  channelId: string
+  repeatIndex: number
+  status: 'success' | 'failed'
+  error?: string
+}
+
 /** メッセージ送信結果（1チャンネル） */
 export interface BroadcastChannelResult {
   channelId: string
