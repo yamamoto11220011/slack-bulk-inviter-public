@@ -10,6 +10,7 @@ import type {
   AuditTeamActivity,
   AuditTimelinePoint,
   ClassifiedUser,
+  InviteRunRecord,
   SlackChannel,
   SlackMessageActivity,
   SyncMeta,
@@ -149,6 +150,21 @@ export class AppDatabase {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS invite_runs (
+        id TEXT PRIMARY KEY,
+        mode TEXT NOT NULL,
+        status TEXT NOT NULL,
+        csv_file_name TEXT,
+        channel_ids TEXT NOT NULL,
+        channel_names TEXT NOT NULL,
+        user_ids TEXT NOT NULL,
+        preview_json TEXT NOT NULL,
+        summary_json TEXT NOT NULL,
+        logs_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
       
       `);
 
@@ -187,6 +203,7 @@ export class AppDatabase {
       CREATE INDEX IF NOT EXISTS idx_messages_channel_ts ON messages(channel_id, ts DESC);
       CREATE INDEX IF NOT EXISTS idx_messages_thread_ts ON messages(thread_ts);
       CREATE INDEX IF NOT EXISTS idx_membership_changes_date ON membership_changes(synced_at);
+      CREATE INDEX IF NOT EXISTS idx_invite_runs_created_at ON invite_runs(created_at DESC);
     `)
   }
 
@@ -813,5 +830,53 @@ export class AppDatabase {
     this.db
       .prepare('UPDATE broadcast_tasks SET logs = ?, updated_at = ? WHERE id = ?')
       .run(JSON.stringify(trimmedLogs), isoNow(), taskId)
+  }
+
+  getInviteRuns(limit = 30): InviteRunRecord[] {
+    const rows = this.db
+      .prepare('SELECT * FROM invite_runs ORDER BY created_at DESC LIMIT ?')
+      .all(limit) as Array<Record<string, unknown>>
+
+    return rows.map((row) => ({
+      id: String(row.id),
+      mode: String(row.mode) as InviteRunRecord['mode'],
+      status: String(row.status) as InviteRunRecord['status'],
+      csvFileName: (row.csv_file_name as string | null) ?? null,
+      channelIds: JSON.parse(String(row.channel_ids ?? '[]')),
+      channelNames: JSON.parse(String(row.channel_names ?? '[]')),
+      userIds: JSON.parse(String(row.user_ids ?? '[]')),
+      preview: JSON.parse(String(row.preview_json ?? '{}')),
+      summary: JSON.parse(String(row.summary_json ?? '{}')),
+      logs: JSON.parse(String(row.logs_json ?? '[]')),
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at)
+    }))
+  }
+
+  insertInviteRun(record: InviteRunRecord): void {
+    this.db
+      .prepare(`
+        INSERT INTO invite_runs (
+          id, mode, status, csv_file_name, channel_ids, channel_names, user_ids,
+          preview_json, summary_json, logs_json, created_at, updated_at
+        ) VALUES (
+          @id, @mode, @status, @csv_file_name, @channel_ids, @channel_names, @user_ids,
+          @preview_json, @summary_json, @logs_json, @created_at, @updated_at
+        )
+      `)
+      .run({
+        id: record.id,
+        mode: record.mode,
+        status: record.status,
+        csv_file_name: record.csvFileName,
+        channel_ids: JSON.stringify(record.channelIds),
+        channel_names: JSON.stringify(record.channelNames),
+        user_ids: JSON.stringify(record.userIds),
+        preview_json: JSON.stringify(record.preview),
+        summary_json: JSON.stringify(record.summary),
+        logs_json: JSON.stringify(record.logs),
+        created_at: record.createdAt,
+        updated_at: record.updatedAt
+      })
   }
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react'
 import { useAppStore } from '../stores/app-store'
+import type { InviteRunRecord } from '../../../core/types'
 
 export function useInvite() {
   const { isInviting, inviteProgress, setInviting, setInviteProgress, channels } = useAppStore()
@@ -14,12 +15,35 @@ export function useInvite() {
   }, [channels, setInviteProgress])
 
   const executeInvite = useCallback(
-    async (channelIds: string[], userIds: string[]) => {
+    async (
+      channelIds: string[],
+      userIds: string[],
+      adminPin: string,
+      csvFileName?: string | null
+    ): Promise<InviteRunRecord> => {
       setInviting(true)
       setInviteProgress({ done: 0, total: channelIds.length * userIds.length, channelName: null })
       try {
-        const result = await window.api.executeInvite(channelIds, userIds)
+        const result = await window.api.executeInvite(channelIds, userIds, adminPin, csvFileName)
         return result
+      } finally {
+        setInviting(false)
+        setInviteProgress(null)
+      }
+    },
+    [setInviting, setInviteProgress]
+  )
+
+  const dryRunInvite = useCallback(
+    async (
+      channelIds: string[],
+      userIds: string[],
+      csvFileName?: string | null
+    ): Promise<InviteRunRecord> => {
+      setInviting(true)
+      setInviteProgress({ done: 0, total: channelIds.length * userIds.length, channelName: null })
+      try {
+        return await window.api.dryRunInvite(channelIds, userIds, csvFileName)
       } finally {
         setInviting(false)
         setInviteProgress(null)
@@ -32,5 +56,5 @@ export function useInvite() {
     await window.api.cancelInvite()
   }, [])
 
-  return { isInviting, inviteProgress, executeInvite, cancelInvite }
+  return { isInviting, inviteProgress, executeInvite, dryRunInvite, cancelInvite }
 }

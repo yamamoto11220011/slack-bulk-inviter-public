@@ -90,6 +90,7 @@ interface AppState {
   clearSelection: () => void
   setSelectedChannel: (channelId: string | null) => void
   toggleBroadcastChannel: (channelId: string) => void
+  setSelectedBroadcastChannels: (channelIds: string[]) => void
   selectAllBroadcastChannels: () => void
   selectNBroadcastChannels: (count: number) => void
   clearBroadcastChannels: () => void
@@ -243,6 +244,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           : [...state.selectedBroadcastChannelIds, channelId]
       }
     }),
+  setSelectedBroadcastChannels: (channelIds) =>
+    set({ selectedBroadcastChannelIds: [...channelIds] }),
   selectAllBroadcastChannels: () =>
     set((state) => ({
       selectedBroadcastChannelIds: state.channels.map((c) => c.id)

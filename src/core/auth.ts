@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, unlinkSync, mkdirSync } from 'fs'
-import { randomBytes } from 'crypto'
-import { dirname, join } from 'path'
+import { randomBytes, scryptSync, timingSafeEqual } from 'crypto'
+import { join } from 'path'
 import type { AuthCredentials } from './types'
 
 /**
@@ -11,6 +11,7 @@ import type { AuthCredentials } from './types'
 export class AuthService {
   private credentialsPath: string
   private dbKeyPath: string
+  private adminPinPath: string
   private encrypt?: (text: string) => Buffer
   private decrypt?: (encrypted: Buffer) => string
 
@@ -25,6 +26,7 @@ export class AuthService {
     if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true })
     this.credentialsPath = join(dataDir, 'credentials.enc')
     this.dbKeyPath = join(dataDir, 'dbkey.enc')
+    this.adminPinPath = join(dataDir, 'admin-pin.enc')
 
     if (electronSafeStorage?.isEncryptionAvailable()) {
       this.encrypt = (text) => electronSafeStorage.encryptString(text)
@@ -71,5 +73,32 @@ export class AuthService {
     const key = randomBytes(32).toString('hex')
     this.writeSecure(this.dbKeyPath, key)
     return key
+  }
+
+  async isAdminPinConfigured(): Promise<boolean> {
+    return this.readSecure(this.adminPinPath) !== null
+  }
+
+  async setAdminPin(pin: string): Promise<void> {
+    const normalized = pin.trim()
+    if (normalized.length < 4) {
+      throw new Error('管理者PINは4文字以上で設定してください。')
+    }
+
+    const salt = randomBytes(16).toString('hex')
+    const hash = scryptSync(normalized, salt, 32).toString('hex')
+    this.writeSecure(this.adminPinPath, JSON.stringify({ salt, hash }))
+  }
+
+  async verifyAdminPin(pin: string): Promise<boolean> {
+    const raw = this.readSecure(this.adminPinPath)
+    if (!raw) return false
+
+    const { salt, hash } = JSON.parse(raw) as { salt: string; hash: string }
+    const derived = scryptSync(pin.trim(), salt, 32)
+    const stored = Buffer.from(hash, 'hex')
+
+    if (stored.length !== derived.length) return false
+    return timingSafeEqual(stored, derived)
   }
 }

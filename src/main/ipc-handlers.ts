@@ -1,4 +1,6 @@
 import { ipcMain, app, safeStorage, BrowserWindow, dialog } from 'electron'
+import { readFileSync } from 'fs'
+import { randomUUID } from 'crypto'
 import { join } from 'path'
 import { openAuthWindow } from './auth-window'
 import { AuthService } from '../core/auth'
@@ -7,6 +9,7 @@ import { CategoryEngine } from '../core/category'
 import { SlackClient } from '../core/slack-client'
 import { SyncService } from '../core/sync'
 import { InviteService } from '../core/invite'
+import { parseInviteCsv } from '../core/invite-csv'
 import { BroadcastService } from '../core/broadcast'
 import { BroadcastManager } from '../core/broadcast-manager'
 import { DirectMessageService } from '../core/direct-message'
@@ -14,8 +17,13 @@ import { resolveSlackChannelId } from '../core/slack-target'
 import type {
   AuditOverview,
   ClassifiedUser,
+  CsvInviteImportResult,
+  InviteLogEntry,
+  InvitePreviewResult,
+  InviteRunRecord,
+  InviteRunStatus,
+  InviteSummary,
   SlackChannel,
-  InviteBatchResult,
   MultiInviteBatchResult,
   BroadcastBatchResult,
   AudienceSelectionResult,
@@ -77,6 +85,144 @@ async function createSlackClient(): Promise<SlackClient> {
   const creds = await auth.getCredentials()
   if (!creds) throw new Error('未ログインです。先にログインしてください。')
   return new SlackClient(creds)
+}
+
+function getUserLabel(user: ClassifiedUser): string {
+  return user.displayName || user.realName || user.name || user.id
+}
+
+function buildInviteSummary(
+  userIds: string[],
+  channelIds: string[],
+  preview: InvitePreviewResult,
+  result?: MultiInviteBatchResult
+): InviteSummary {
+  return {
+    requestedUsers: userIds.length,
+    requestedChannels: channelIds.length,
+    totalRequested: preview.totalRequested,
+    totalSucceeded: result ? result.totalSucceeded : preview.totalInvitable,
+    totalFailed: result ? result.totalFailed : 0,
+    totalAlreadyInChannel: result ? result.totalAlreadyInChannel : preview.totalAlreadyInChannel
+  }
+}
+
+function buildPreviewLogs(
+  preview: InvitePreviewResult,
+  userNameById: Map<string, string>
+): InviteLogEntry[] {
+  const timestamp = new Date().toISOString()
+  const logs: InviteLogEntry[] = []
+
+  for (const channelResult of preview.channelResults) {
+    for (const userId of channelResult.invitableUserIds) {
+      logs.push({
+        timestamp,
+        channelId: channelResult.channelId,
+        channelName: channelResult.channelName,
+        userId,
+        userName: userNameById.get(userId) ?? null,
+        status: 'planned'
+      })
+    }
+
+    for (const userId of channelResult.alreadyInChannelUserIds) {
+      logs.push({
+        timestamp,
+        channelId: channelResult.channelId,
+        channelName: channelResult.channelName,
+        userId,
+        userName: userNameById.get(userId) ?? null,
+        status: 'already_in_channel'
+      })
+    }
+  }
+
+  return logs
+}
+
+function buildExecutionLogs(
+  result: MultiInviteBatchResult,
+  channelNameById: Map<string, string>,
+  userNameById: Map<string, string>
+): InviteLogEntry[] {
+  const timestamp = new Date().toISOString()
+  const logs: InviteLogEntry[] = []
+
+  for (const channelResult of result.channelResults) {
+    const channelName = channelNameById.get(channelResult.channelId) ?? null
+    for (const detail of channelResult.details) {
+      for (const userId of detail.succeeded) {
+        logs.push({
+          timestamp,
+          channelId: channelResult.channelId,
+          channelName,
+          userId,
+          userName: userNameById.get(userId) ?? null,
+          status: 'success'
+        })
+      }
+
+      for (const userId of detail.alreadyInChannel) {
+        logs.push({
+          timestamp,
+          channelId: channelResult.channelId,
+          channelName,
+          userId,
+          userName: userNameById.get(userId) ?? null,
+          status: 'already_in_channel'
+        })
+      }
+
+      for (const failure of detail.failed) {
+        logs.push({
+          timestamp,
+          channelId: channelResult.channelId,
+          channelName,
+          userId: failure.userId,
+          userName: userNameById.get(failure.userId) ?? null,
+          status: 'failed',
+          error: failure.error
+        })
+      }
+    }
+  }
+
+  return logs
+}
+
+function deriveInviteStatus(result: MultiInviteBatchResult): InviteRunStatus {
+  if (result.cancelled) return 'cancelled'
+  if (result.totalSucceeded === 0 && result.totalFailed > 0) return 'failed'
+  return 'completed'
+}
+
+function createInviteRunRecord(params: {
+  mode: InviteRunRecord['mode']
+  status: InviteRunStatus
+  csvFileName?: string | null
+  channelIds: string[]
+  channelNames: string[]
+  userIds: string[]
+  preview: InvitePreviewResult
+  summary: InviteSummary
+  logs: InviteLogEntry[]
+}): InviteRunRecord {
+  const now = new Date().toISOString()
+  return {
+    id: randomUUID(),
+    mode: params.mode,
+    status: params.status,
+    csvFileName: params.csvFileName ?? null,
+    channelIds: params.channelIds,
+    channelNames: params.channelNames,
+    userIds: params.userIds,
+    preview: params.preview,
+    summary: params.summary,
+    logs: params.logs,
+    createdAt: now,
+    updatedAt: now
+  }
 }
 
 /** BroadcastManager を初期化して開始 */
@@ -228,22 +374,152 @@ export function registerIpcHandlers(): void {
     return database.getSyncMeta()
   })
 
+  ipcMain.handle('invite:adminStatus', async () => {
+    const auth = getAuthService()
+    return { configured: await auth.isAdminPinConfigured() }
+  })
+
+  ipcMain.handle('invite:setAdminPin', async (_event, pin: string) => {
+    const auth = getAuthService()
+    await auth.setAdminPin(pin)
+    return { success: true }
+  })
+
+  ipcMain.handle('invite:importCsv', async (): Promise<CsvInviteImportResult> => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [
+        { name: 'CSV Files', extensions: ['csv', 'txt'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return {
+        filePath: null,
+        fileName: null,
+        columnName: null,
+        parsedCount: 0,
+        matchedCount: 0,
+        duplicateCount: 0,
+        matchedUserIds: [],
+        unmatchedValues: []
+      }
+    }
+
+    const filePath = result.filePaths[0]
+    const text = readFileSync(filePath, 'utf-8')
+    const database = await getDatabase()
+    const users = database.getUsers()
+    const fileName = filePath.split(/[\\/]/).pop() ?? null
+    return parseInviteCsv(text, users, filePath, fileName)
+  })
+
+  ipcMain.handle(
+    'invite:preview',
+    async (_event, channelIds: string[], userIds: string[]): Promise<InvitePreviewResult> => {
+      const client = await createSlackClient()
+      const database = await getDatabase()
+      const inviteService = new InviteService(client)
+      const channelNameById = new Map(database.getChannels().map((channel) => [channel.id, channel.name]))
+      return inviteService.previewForChannels(channelIds, userIds, channelNameById)
+    }
+  )
+
+  ipcMain.handle('invite:listHistory', async (): Promise<InviteRunRecord[]> => {
+    const database = await getDatabase()
+    return database.getInviteRuns()
+  })
+
   // ---- 招待 ----
   ipcMain.handle(
     'invite:execute',
-    async (event, channelIds: string[], userIds: string[]): Promise<MultiInviteBatchResult> => {
+    async (
+      event,
+      channelIds: string[],
+      userIds: string[],
+      adminPin: string,
+      csvFileName?: string | null
+    ): Promise<InviteRunRecord> => {
+      const auth = getAuthService()
+      const adminConfigured = await auth.isAdminPinConfigured()
+      if (!adminConfigured) {
+        throw new Error('管理者PINが未設定です。先に管理者PINを設定してください。')
+      }
+
+      const pinVerified = await auth.verifyAdminPin(adminPin)
+      if (!pinVerified) {
+        throw new Error('管理者PINが正しくありません。')
+      }
+
       activeInviteCancelled = false
       const client = await createSlackClient()
+      const database = await getDatabase()
       const inviteService = new InviteService(client)
+      const users = database.getUsers()
+      const channels = database.getChannels()
+      const channelNameById = new Map(channels.map((channel) => [channel.id, channel.name]))
+      const userNameById = new Map(users.map((user) => [user.id, getUserLabel(user)]))
+      const uniqueUserIds = Array.from(new Set(userIds))
+      const preview = await inviteService.previewForChannels(channelIds, uniqueUserIds, channelNameById)
       const result = await inviteService.inviteToChannels(
         channelIds,
-        userIds,
+        uniqueUserIds,
         (done, total, channelId) => {
           event.sender.send('invite:progress', { done, total, channelId })
         },
         () => activeInviteCancelled
       )
-      return result
+
+      const record = createInviteRunRecord({
+        mode: 'execute',
+        status: deriveInviteStatus(result),
+        csvFileName,
+        channelIds: [...channelIds],
+        channelNames: channelIds.map((channelId) => channelNameById.get(channelId) ?? channelId),
+        userIds: uniqueUserIds,
+        preview,
+        summary: buildInviteSummary(uniqueUserIds, channelIds, preview, result),
+        logs: buildExecutionLogs(result, channelNameById, userNameById)
+      })
+
+      database.insertInviteRun(record)
+      return record
+    }
+  )
+
+  ipcMain.handle(
+    'invite:dryRun',
+    async (
+      _event,
+      channelIds: string[],
+      userIds: string[],
+      csvFileName?: string | null
+    ): Promise<InviteRunRecord> => {
+      const client = await createSlackClient()
+      const database = await getDatabase()
+      const inviteService = new InviteService(client)
+      const users = database.getUsers()
+      const channels = database.getChannels()
+      const uniqueUserIds = Array.from(new Set(userIds))
+      const channelNameById = new Map(channels.map((channel) => [channel.id, channel.name]))
+      const userNameById = new Map(users.map((user) => [user.id, getUserLabel(user)]))
+      const preview = await inviteService.previewForChannels(channelIds, uniqueUserIds, channelNameById)
+
+      const record = createInviteRunRecord({
+        mode: 'dry-run',
+        status: 'completed',
+        csvFileName,
+        channelIds: [...channelIds],
+        channelNames: channelIds.map((channelId) => channelNameById.get(channelId) ?? channelId),
+        userIds: uniqueUserIds,
+        preview,
+        summary: buildInviteSummary(uniqueUserIds, channelIds, preview),
+        logs: buildPreviewLogs(preview, userNameById)
+      })
+
+      database.insertInviteRun(record)
+      return record
     }
   )
 

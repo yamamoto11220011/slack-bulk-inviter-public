@@ -20,7 +20,7 @@ export function InviteView() {
       </main>
 
       {/* 右パネル: 招待設定 */}
-      <aside className="w-80 shrink-0 border-l border-border bg-card overflow-auto shadow-inner">
+      <aside className="w-[30rem] shrink-0 border-l border-border bg-card overflow-auto shadow-inner">
         <InvitePanel />
       </aside>
     </div>

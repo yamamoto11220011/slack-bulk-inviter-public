@@ -3,8 +3,11 @@ import type {
   AudienceSelectionResult,
   BroadcastTask,
   BroadcastProgress,
+  CsvInviteImportResult,
   DirectMessageBatchResult,
-  DirectMessageProgress
+  DirectMessageProgress,
+  InvitePreviewResult,
+  InviteRunRecord
 } from '../core/types'
 
 const api = {
@@ -41,8 +44,27 @@ const api = {
     ipcRenderer.invoke('audience:excludeMembers', userIds, channelInput),
 
   // 招待
-  executeInvite: (channelIds: string[], userIds: string[]) =>
-    ipcRenderer.invoke('invite:execute', channelIds, userIds),
+  getInviteAdminStatus: (): Promise<{ configured: boolean }> =>
+    ipcRenderer.invoke('invite:adminStatus'),
+  setInviteAdminPin: (pin: string): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('invite:setAdminPin', pin),
+  importInviteCsv: (): Promise<CsvInviteImportResult> => ipcRenderer.invoke('invite:importCsv'),
+  previewInvite: (channelIds: string[], userIds: string[]): Promise<InvitePreviewResult> =>
+    ipcRenderer.invoke('invite:preview', channelIds, userIds),
+  executeInvite: (
+    channelIds: string[],
+    userIds: string[],
+    adminPin: string,
+    csvFileName?: string | null
+  ): Promise<InviteRunRecord> =>
+    ipcRenderer.invoke('invite:execute', channelIds, userIds, adminPin, csvFileName),
+  dryRunInvite: (
+    channelIds: string[],
+    userIds: string[],
+    csvFileName?: string | null
+  ): Promise<InviteRunRecord> =>
+    ipcRenderer.invoke('invite:dryRun', channelIds, userIds, csvFileName),
+  listInviteHistory: (): Promise<InviteRunRecord[]> => ipcRenderer.invoke('invite:listHistory'),
   cancelInvite: () => ipcRenderer.invoke('invite:cancel'),
   executeDirectMessage: (
     userIds: string[],

@@ -133,6 +133,73 @@ export interface MultiInviteBatchResult {
   channelResults: InviteBatchResult[]
 }
 
+export interface CsvInviteImportResult {
+  filePath: string | null
+  fileName: string | null
+  columnName: string | null
+  parsedCount: number
+  matchedCount: number
+  duplicateCount: number
+  matchedUserIds: string[]
+  unmatchedValues: string[]
+}
+
+export interface InvitePreviewChannelResult {
+  channelId: string
+  channelName: string | null
+  requestedCount: number
+  invitableCount: number
+  alreadyInChannelCount: number
+  invitableUserIds: string[]
+  alreadyInChannelUserIds: string[]
+}
+
+export interface InvitePreviewResult {
+  channelIds: string[]
+  requestedUserIds: string[]
+  totalRequested: number
+  totalInvitable: number
+  totalAlreadyInChannel: number
+  channelResults: InvitePreviewChannelResult[]
+}
+
+export type InviteRunMode = 'dry-run' | 'execute'
+export type InviteRunStatus = 'completed' | 'cancelled' | 'failed'
+
+export interface InviteSummary {
+  requestedUsers: number
+  requestedChannels: number
+  totalRequested: number
+  totalSucceeded: number
+  totalFailed: number
+  totalAlreadyInChannel: number
+}
+
+export interface InviteLogEntry {
+  timestamp: string
+  channelId: string
+  channelName: string | null
+  userId: string
+  userName: string | null
+  status: 'success' | 'failed' | 'already_in_channel' | 'planned'
+  error?: string
+}
+
+export interface InviteRunRecord {
+  id: string
+  mode: InviteRunMode
+  status: InviteRunStatus
+  csvFileName: string | null
+  channelIds: string[]
+  channelNames: string[]
+  userIds: string[]
+  preview: InvitePreviewResult
+  summary: InviteSummary
+  logs: InviteLogEntry[]
+  createdAt: string
+  updatedAt: string
+}
+
 /** メッセージ送信結果（1チャンネル） */
 export interface BroadcastChannelResult {
   channelId: string

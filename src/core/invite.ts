@@ -1,11 +1,64 @@
 import { SlackClient } from './slack-client'
-import type { InviteBatchResult, MultiInviteBatchResult } from './types'
+import type {
+  InviteBatchResult,
+  InvitePreviewChannelResult,
+  InvitePreviewResult,
+  MultiInviteBatchResult
+} from './types'
 
 const RATE_LIMIT_DELAY_MS = 1200 // ~50 req/min for Tier 3
 const PREFETCH_MEMBER_THRESHOLD = 20
 
 export class InviteService {
   constructor(private client: SlackClient) {}
+
+  async previewInvite(
+    channelId: string,
+    userIds: string[],
+    channelName: string | null = null
+  ): Promise<InvitePreviewChannelResult> {
+    const uniqueUserIds = Array.from(new Set(userIds))
+    const existingMembers = new Set(await this.client.fetchChannelMembers(channelId, uniqueUserIds))
+    const alreadyInChannelUserIds = uniqueUserIds.filter((userId) => existingMembers.has(userId))
+    const invitableUserIds = uniqueUserIds.filter((userId) => !existingMembers.has(userId))
+
+    return {
+      channelId,
+      channelName,
+      requestedCount: uniqueUserIds.length,
+      invitableCount: invitableUserIds.length,
+      alreadyInChannelCount: alreadyInChannelUserIds.length,
+      invitableUserIds,
+      alreadyInChannelUserIds
+    }
+  }
+
+  async previewForChannels(
+    channelIds: string[],
+    userIds: string[],
+    channelNameById?: Map<string, string>
+  ): Promise<InvitePreviewResult> {
+    const uniqueUserIds = Array.from(new Set(userIds))
+    const channelResults: InvitePreviewChannelResult[] = []
+
+    for (const channelId of channelIds) {
+      const preview = await this.previewInvite(
+        channelId,
+        uniqueUserIds,
+        channelNameById?.get(channelId) ?? null
+      )
+      channelResults.push(preview)
+    }
+
+    return {
+      channelIds: [...channelIds],
+      requestedUserIds: uniqueUserIds,
+      totalRequested: channelIds.length * uniqueUserIds.length,
+      totalInvitable: channelResults.reduce((sum, item) => sum + item.invitableCount, 0),
+      totalAlreadyInChannel: channelResults.reduce((sum, item) => sum + item.alreadyInChannelCount, 0),
+      channelResults
+    }
+  }
 
   async inviteBatch(
     channelId: string,
